@@ -11,7 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface CardRegisteredRepository extends JpaRepository<CardRegistered, Long> {
 
-	// 중복 카드 등록 차단용
+	// [be] 이준혁 260521 1602 | 중복 카드 등록 차단용
 	boolean existsByUserIdAndCardProductIdAndStatusIn(
 			Long userId,
 			Long cardProductId,

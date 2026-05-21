@@ -33,9 +33,7 @@ public class CardManagementService {
 	private final CardProductRepository cardProductRepository;
 	private final Clock clock;
 
-	/**
-	 * 삭제되지 않은 사용자 카드 목록을 조회하고 카드 상품 정보와 합쳐 응답 DTO로 변환한다.
-	 */
+	// [be] 이준혁 260521 1602 | 삭제되지 않은 사용자 카드 목록을 조회하고 카드 상품 정보와 합쳐 응답 DTO로 변환한다.
 	@Transactional(readOnly = true)
 	public List<CardResponse> getCards(Long userId) {
 		List<CardRegistered> cards = cardRegisteredRepository
@@ -49,9 +47,7 @@ public class CardManagementService {
 			.toList();
 	}
 
-	/**
-	 * userId와 cardId가 함께 맞는 삭제되지 않은 카드만 상세 조회한다.
-	 */
+	// [be] 이준혁 260521 1602 | userId와 cardId가 함께 맞는 삭제되지 않은 카드만 상세 조회한다.
 	@Transactional(readOnly = true)
 	public CardResponse getCard(Long userId, Long cardId) {
 		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
@@ -59,18 +55,14 @@ public class CardManagementService {
 		return toResponse(card, product);
 	}
 
-	/**
-	 * 카드 별칭을 수정한다. 공백만 있는 별칭은 null로 바꿔 별칭 제거로 처리한다.
-	 */
+	// [be] 이준혁 260521 1602 | 카드 별칭을 수정한다. 공백만 있는 별칭은 null로 바꿔 별칭 제거로 처리한다.
 	@Transactional
 	public void updateAlias(Long userId, Long cardId, CardAliasUpdateRequest request) {
 		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
 		card.updateAlias(request.normalizedCardAlias());
 	}
 
-	/**
-	 * ACTIVE 카드만 주카드로 지정하고, 기존 주카드를 먼저 해제해 DB unique 충돌을 피한다.
-	 */
+	// [be] 이준혁 260521 1602 | ACTIVE 카드만 주카드로 지정하고, 기존 주카드를 먼저 해제해 DB unique 충돌을 피한다.
 	@Transactional
 	public void setDefault(Long userId, Long cardId) {
 		CardRegistered targetCard = findOwnedNonDeletedCard(userId, cardId);
@@ -86,9 +78,7 @@ public class CardManagementService {
 		targetCard.markDefault();
 	}
 
-	/**
-	 * 카드는 물리 삭제하지 않고 DELETED 상태로 바꾼다. 주카드 삭제 시 다른 ACTIVE 카드를 대체 주카드로 지정한다.
-	 */
+	// [be] 이준혁 260521 1602 | 카드는 물리 삭제하지 않고 DELETED 상태로 바꾼다. 주카드 삭제 시 다른 ACTIVE 카드를 대체 주카드로 지정한다.
 	@Transactional
 	public void deleteCard(Long userId, Long cardId) {
 		CardRegistered card = findOwnedCard(userId, cardId);
@@ -110,9 +100,7 @@ public class CardManagementService {
 		}
 	}
 
-	/**
-	 * 사용자에게 결제 가능한 ACTIVE 카드가 1장 이상 있는지 확인한다.
-	 */
+	// [be] 이준혁 260521 1602 | 사용자에게 결제 가능한 ACTIVE 카드가 1장 이상 있는지 확인한다.
 	@Transactional(readOnly = true)
 	public PaymentAvailabilityResponse checkUserPaymentAvailability(Long userId) {
 		if (!cardRegisteredRepository.existsByUserIdAndStatusNot(userId, CardStatus.DELETED)) {
@@ -127,9 +115,7 @@ public class CardManagementService {
 		return PaymentAvailabilityResponse.available();
 	}
 
-	/**
-	 * 특정 카드 1장이 결제 가능한 ACTIVE 카드이고 billing key를 갖는지 확인한다.
-	 */
+	// [be] 이준혁 260521 1602 | 특정 카드 1장이 결제 가능한 ACTIVE 카드이고 billing key를 갖는지 확인한다.
 	@Transactional(readOnly = true)
 	public PaymentAvailabilityResponse checkCardPaymentAvailability(Long userId, Long cardId) {
 		CardRegistered card = findOwnedCard(userId, cardId);

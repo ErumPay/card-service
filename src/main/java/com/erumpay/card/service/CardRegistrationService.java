@@ -33,11 +33,8 @@ public class CardRegistrationService {
 	private final CardRegisteredRepository cardRegisteredRepository;
 	private final Clock clock;
 
-	/**
-	 * 카드 등록 요청의 기본 검증, 카드 상품 조회, 중복 등록 여부를 순서대로 확인한다.
-	 *
-	 * billing-key-service 연동 전이므로 카드 원본정보를 저장하지 않고 501로 중단한다.
-	 */
+	// [be] 이준혁 260521 1602 | 카드 등록 요청의 기본 검증, 카드 상품 조회, 중복 등록 여부를 순서대로 확인한다.
+	// [be] 이준혁 260521 1602 | billing-key-service 연동 전이므로 카드 원본정보를 저장하지 않고 501로 중단한다.
 	@Transactional(readOnly = true)
 	public void register(CardRegisterRequest request) {
 		validateMockBinMatchesCardNumber(request.getMockBin(), request.getCardNumber());
@@ -51,18 +48,14 @@ public class CardRegistrationService {
 		throw new BillingKeyNotIntegratedException();
 	}
 
-	/**
-	 * 사용자가 보낸 mockBin이 실제 카드번호 앞 6자리와 같은지 확인한다.
-	 */
+	// [be] 이준혁 260521 1602 | 사용자가 보낸 mockBin이 실제 카드번호 앞 6자리와 같은지 확인한다.
 	private void validateMockBinMatchesCardNumber(String mockBin, String cardNumber) {
 		if (!cardNumber.startsWith(mockBin)) {
 			throw new BinMismatchException();
 		}
 	}
 
-	/**
-	 * 유효기간이 yyyyMM 형식이고 현재 월보다 과거가 아닌지 확인한다.
-	 */
+	// [be] 이준혁 260521 1602 | 유효기간이 yyyyMM 형식이고 현재 월보다 과거가 아닌지 확인한다.
 	private void validateExpiryYm(String expiryYm) {
 		YearMonth parsedExpiryYm;
 		try {
@@ -76,9 +69,7 @@ public class CardRegistrationService {
 		}
 	}
 
-	/**
-	 * 같은 사용자가 같은 카드 상품을 이미 등록했는지 확인한다. DELETED 상태는 재등록 가능하므로 제외한다.
-	 */
+	// [be] 이준혁 260521 1602 | 같은 사용자가 같은 카드 상품을 이미 등록했는지 확인한다. DELETED 상태는 재등록 가능하므로 제외한다.
 	private void validateDuplicateRegistration(Long userId, Long cardProductId) {
 		boolean alreadyRegistered = cardRegisteredRepository.existsByUserIdAndCardProductIdAndStatusIn(
 				userId,
