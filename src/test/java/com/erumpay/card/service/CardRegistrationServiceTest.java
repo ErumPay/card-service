@@ -16,6 +16,7 @@ import com.erumpay.card.exception.BillingKeyNotIntegratedException;
 import com.erumpay.card.exception.BinMismatchException;
 import com.erumpay.card.exception.CardProductNotFoundException;
 import com.erumpay.card.exception.DuplicateCardRegistrationException;
+import com.erumpay.card.exception.InvalidExpiryYmException;
 import com.erumpay.card.repository.CardProductRepository;
 import com.erumpay.card.repository.CardRegisteredRepository;
 import java.time.Clock;
@@ -61,6 +62,28 @@ class CardRegistrationServiceTest {
 
 		assertThatThrownBy(() -> cardRegistrationService.register(request))
 			.isInstanceOf(BinMismatchException.class);
+
+		verify(cardProductRepository, never()).findByMockBin(any());
+		verify(cardRegisteredRepository, never()).existsByUserIdAndCardProductIdAndStatusIn(any(), any(), any());
+	}
+
+	@Test
+	void registerFailsWhenExpiryYmHasInvalidMonth() {
+		CardRegisterRequest request = request("800000", "8000001234567890", "202613");
+
+		assertThatThrownBy(() -> cardRegistrationService.register(request))
+			.isInstanceOf(InvalidExpiryYmException.class);
+
+		verify(cardProductRepository, never()).findByMockBin(any());
+		verify(cardRegisteredRepository, never()).existsByUserIdAndCardProductIdAndStatusIn(any(), any(), any());
+	}
+
+	@Test
+	void registerFailsWhenExpiryYmIsPastMonth() {
+		CardRegisterRequest request = request("800000", "8000001234567890", "202504");
+
+		assertThatThrownBy(() -> cardRegistrationService.register(request))
+			.isInstanceOf(InvalidExpiryYmException.class);
 
 		verify(cardProductRepository, never()).findByMockBin(any());
 		verify(cardRegisteredRepository, never()).existsByUserIdAndCardProductIdAndStatusIn(any(), any(), any());
@@ -129,11 +152,15 @@ class CardRegistrationServiceTest {
 	}
 
 	private CardRegisterRequest request(String mockBin, String cardNumber) {
+		return request(mockBin, cardNumber, "202812");
+	}
+
+	private CardRegisterRequest request(String mockBin, String cardNumber, String expiryYm) {
 		return new CardRegisterRequest(
 			1L,
 			mockBin,
 			cardNumber,
-			"202812",
+			expiryYm,
 			"123",
 			"12",
 			"생활비 카드",

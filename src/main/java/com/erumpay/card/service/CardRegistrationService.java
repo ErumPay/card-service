@@ -47,8 +47,6 @@ public class CardRegistrationService {
 				.orElseThrow(CardProductNotFoundException::new);
 
 		validateDuplicateRegistration(request.getUserId(), cardProduct.getCardProductId());
-		request.normalizedCardAlias();
-		request.defaultRequested();
 
 		throw new BillingKeyNotIntegratedException();
 	}
