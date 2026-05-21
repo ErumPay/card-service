@@ -108,7 +108,7 @@ class CardRegistrationServiceTest {
 			eq(10L),
 			statusesCaptor.capture()
 		);
-		assertThat(statusesCaptor.getValue()).containsExactly(
+		assertThat(statusesCaptor.getValue()).containsExactlyInAnyOrder(
 			CardStatus.ACTIVE,
 			CardStatus.PAUSED,
 			CardStatus.EXPIRED

@@ -13,6 +13,12 @@ public abstract class CardServiceException extends RuntimeException {
 		this.code = code;
 	}
 
+	protected CardServiceException(HttpStatus status, String code, String message, Throwable cause) {
+		super(message, cause);
+		this.status = status;
+		this.code = code;
+	}
+
 	public HttpStatus getStatus() {
 		return status;
 	}

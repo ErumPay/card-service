@@ -70,7 +70,7 @@ public class CardRegistrationService {
 		try {
 			parsedExpiryYm = YearMonth.parse(expiryYm, EXPIRY_FORMATTER);
 		} catch (DateTimeParseException exception) {
-			throw new InvalidExpiryYmException();
+			throw new InvalidExpiryYmException(exception);
 		}
 
 		if (parsedExpiryYm.isBefore(YearMonth.now(clock))) {

@@ -25,7 +25,7 @@ public class CardProduct {
 	@Column(name = "card_product_id")
 	private Long cardProductId;
 
-	@Column(name = "mock_bin", nullable = false, length = 6)
+	@Column(name = "mock_bin", nullable = false, unique = true, length = 6)
 	private String mockBin;
 
 	@Column(name = "card_company", nullable = false, length = 50)
