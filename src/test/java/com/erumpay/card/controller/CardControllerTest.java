@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.erumpay.card.exception.GlobalExceptionHandler;
 import com.erumpay.card.service.CardBinValidationService;
 import com.erumpay.card.service.CardManagementService;
+import com.erumpay.card.service.CardPerformanceBenefitService;
 import com.erumpay.card.service.CardRegistrationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ class CardControllerTest {
 		CardRegistrationService cardRegistrationService = mock(CardRegistrationService.class);
 		CardManagementService cardManagementService = mock(CardManagementService.class);
 		cardBinValidationService = mock(CardBinValidationService.class);
+		CardPerformanceBenefitService cardPerformanceBenefitService = mock(CardPerformanceBenefitService.class);
 
 		LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
 		validator.afterPropertiesSet();
@@ -37,7 +39,8 @@ class CardControllerTest {
 			.standaloneSetup(new CardController(
 				cardRegistrationService,
 				cardManagementService,
-				cardBinValidationService
+				cardBinValidationService,
+				cardPerformanceBenefitService
 			))
 			.setControllerAdvice(new GlobalExceptionHandler())
 			.setValidator(validator)

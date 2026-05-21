@@ -3,11 +3,14 @@ package com.erumpay.card.controller;
 import com.erumpay.card.dto.CardAliasUpdateRequest;
 import com.erumpay.card.dto.CardBinValidateRequest;
 import com.erumpay.card.dto.CardBinValidateResponse;
+import com.erumpay.card.dto.CardBenefitResponse;
+import com.erumpay.card.dto.CardPerformanceResponse;
 import com.erumpay.card.dto.CardRegisterRequest;
 import com.erumpay.card.dto.CardResponse;
 import com.erumpay.card.dto.PaymentAvailabilityResponse;
 import com.erumpay.card.service.CardBinValidationService;
 import com.erumpay.card.service.CardManagementService;
+import com.erumpay.card.service.CardPerformanceBenefitService;
 import com.erumpay.card.service.CardRegistrationService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -31,6 +34,7 @@ public class CardController {
 	private final CardRegistrationService cardRegistrationService;
 	private final CardManagementService cardManagementService;
 	private final CardBinValidationService cardBinValidationService;
+	private final CardPerformanceBenefitService cardPerformanceBenefitService;
 
 	@PostMapping
 	public ResponseEntity<Void> register(@Valid @RequestBody CardRegisterRequest request) {
@@ -51,6 +55,23 @@ public class CardController {
 	@GetMapping("/{cardId}")
 	public ResponseEntity<CardResponse> getCard(@PathVariable Long cardId, @RequestParam Long userId) {
 		return ResponseEntity.ok(cardManagementService.getCard(userId, cardId));
+	}
+
+	@GetMapping("/{cardId}/performance")
+	public ResponseEntity<CardPerformanceResponse> getPerformance(
+		@PathVariable Long cardId,
+		@RequestParam Long userId,
+		@RequestParam String yearMonth
+	) {
+		return ResponseEntity.ok(cardPerformanceBenefitService.getPerformance(userId, cardId, yearMonth));
+	}
+
+	@GetMapping("/{cardId}/benefits")
+	public ResponseEntity<List<CardBenefitResponse>> getBenefits(
+		@PathVariable Long cardId,
+		@RequestParam Long userId
+	) {
+		return ResponseEntity.ok(cardPerformanceBenefitService.getBenefits(userId, cardId));
 	}
 
 	@PatchMapping("/{cardId}/alias")
