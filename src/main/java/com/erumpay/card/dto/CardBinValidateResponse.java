@@ -1,7 +1,5 @@
 package com.erumpay.card.dto;
 
-import com.erumpay.card.domain.entity.CardProduct;
-import com.erumpay.card.domain.enums.CardType;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -12,10 +10,22 @@ public class CardBinValidateResponse {
 	private boolean supported;
 	private CardProductSummary cardProduct;
 
-	public static CardBinValidateResponse supported(CardProduct cardProduct) {
+	public static CardBinValidateResponse supported(
+		Long cardProductId,
+		String cardCompany,
+		String cardName,
+		String cardType,
+		String imageUrl
+	) {
 		return CardBinValidateResponse.builder()
 			.supported(true)
-			.cardProduct(CardProductSummary.from(cardProduct))
+			.cardProduct(CardProductSummary.builder()
+				.cardProductId(cardProductId)
+				.cardCompany(cardCompany)
+				.cardName(cardName)
+				.cardType(cardType)
+				.imageUrl(imageUrl)
+				.build())
 			.build();
 	}
 
@@ -33,17 +43,7 @@ public class CardBinValidateResponse {
 		private Long cardProductId;
 		private String cardCompany;
 		private String cardName;
-		private CardType cardType;
+		private String cardType;
 		private String imageUrl;
-
-		private static CardProductSummary from(CardProduct cardProduct) {
-			return CardProductSummary.builder()
-				.cardProductId(cardProduct.getCardProductId())
-				.cardCompany(cardProduct.getCardCompany())
-				.cardName(cardProduct.getCardName())
-				.cardType(cardProduct.getCardType())
-				.imageUrl(cardProduct.getImageUrl())
-				.build();
-		}
 	}
 }

@@ -1,6 +1,7 @@
 package com.erumpay.card.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -39,5 +40,14 @@ class CardBinValidateRequestTest {
 		CardBinValidateRequest request = new CardBinValidateRequest("8000123456781234");
 
 		assertThat(request.toString()).doesNotContain("8000123456781234");
+	}
+
+	@Test
+	void mockBinFailsWithClearExceptionWhenCardNumberIsTooShort() {
+		CardBinValidateRequest request = new CardBinValidateRequest("80001");
+
+		assertThatThrownBy(request::mockBin)
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("cardNumber is missing or too short to extract mockBin.");
 	}
 }

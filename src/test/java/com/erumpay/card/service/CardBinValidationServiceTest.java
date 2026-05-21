@@ -39,7 +39,7 @@ class CardBinValidationServiceTest {
 		assertThat(response.getCardProduct().getCardProductId()).isEqualTo(10L);
 		assertThat(response.getCardProduct().getCardCompany()).isEqualTo("롯데카드");
 		assertThat(response.getCardProduct().getCardName()).isEqualTo("LOCA 365 카드");
-		assertThat(response.getCardProduct().getCardType()).isEqualTo(CardType.CREDIT);
+		assertThat(response.getCardProduct().getCardType()).isEqualTo("CREDIT");
 		assertThat(response.getCardProduct().getImageUrl()).isEqualTo("https://example.com/card.png");
 		verify(cardProductRepository).findByMockBin("800012");
 	}

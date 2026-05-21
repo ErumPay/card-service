@@ -1,5 +1,6 @@
 package com.erumpay.card.service;
 
+import com.erumpay.card.domain.entity.CardProduct;
 import com.erumpay.card.dto.CardBinValidateRequest;
 import com.erumpay.card.dto.CardBinValidateResponse;
 import com.erumpay.card.repository.CardProductRepository;
@@ -17,7 +18,17 @@ public class CardBinValidationService {
 	@Transactional(readOnly = true)
 	public CardBinValidateResponse validate(CardBinValidateRequest request) {
 		return cardProductRepository.findByMockBin(request.mockBin())
-			.map(CardBinValidateResponse::supported)
+			.map(this::toSupportedResponse)
 			.orElseGet(CardBinValidateResponse::unsupported);
+	}
+
+	private CardBinValidateResponse toSupportedResponse(CardProduct cardProduct) {
+		return CardBinValidateResponse.supported(
+			cardProduct.getCardProductId(),
+			cardProduct.getCardCompany(),
+			cardProduct.getCardName(),
+			cardProduct.getCardType().name(),
+			cardProduct.getImageUrl()
+		);
 	}
 }

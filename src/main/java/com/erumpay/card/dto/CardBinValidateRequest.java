@@ -21,6 +21,9 @@ public class CardBinValidateRequest {
 	private String cardNumber;
 
 	public String mockBin() {
+		if (cardNumber == null || cardNumber.length() < 6) {
+			throw new IllegalArgumentException("cardNumber is missing or too short to extract mockBin.");
+		}
 		return cardNumber.substring(0, 6);
 	}
 }
