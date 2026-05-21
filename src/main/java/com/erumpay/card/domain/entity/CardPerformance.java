@@ -5,7 +5,9 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -13,7 +15,18 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Entity
-@Table(name = "card_performance")
+@Table(
+	name = "card_performance",
+	uniqueConstraints = {
+		@UniqueConstraint(
+			name = "uk_card_performance_user_card_month",
+			columnNames = {"user_id", "card_id", "`year_month`"}
+		)
+	},
+	indexes = {
+		@Index(name = "idx_card_performance_card", columnList = "card_id")
+	}
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CardPerformance {
 
