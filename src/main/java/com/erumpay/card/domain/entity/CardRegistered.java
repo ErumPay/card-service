@@ -58,4 +58,34 @@ public class CardRegistered {
 
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
+
+	public void updateAlias(String cardAlias) {
+		this.cardAlias = cardAlias;
+	}
+
+	public void markDefault() {
+		this.defaultCard = true;
+	}
+
+	public void unsetDefault() {
+		this.defaultCard = false;
+	}
+
+	public void delete(LocalDateTime deletedAt) {
+		this.status = CardStatus.DELETED;
+		this.deletedAt = deletedAt;
+		this.defaultCard = false;
+	}
+
+	public boolean isDeleted() {
+		return status == CardStatus.DELETED;
+	}
+
+	public boolean isActive() {
+		return status == CardStatus.ACTIVE;
+	}
+
+	public boolean hasBillingKey() {
+		return encryptedBillingKey != null && !encryptedBillingKey.isBlank();
+	}
 }
