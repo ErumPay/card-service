@@ -100,6 +100,20 @@ class CardManagementServiceTest {
 	}
 
 	@Test
+	void updateAliasNormalizesTrailingSpaceBeforeApplying() {
+		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "billing-key");
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+			.thenReturn(Optional.of(card));
+
+		CardAliasUpdateRequest request = new CardAliasUpdateRequest();
+		request.setCardAlias("1234567890 ");
+
+		cardManagementService.updateAlias(1L, 10L, request);
+
+		verify(card).updateAlias("1234567890");
+	}
+
+	@Test
 	void setDefaultFailsWhenTargetCardIsNotActive() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.PAUSED, false, "billing-key");
 		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))

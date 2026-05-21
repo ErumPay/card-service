@@ -42,7 +42,7 @@ public interface CardRegisteredRepository extends JpaRepository<CardRegistered, 
 		where card.userId = :userId
 			and card.status = :status
 			and card.encryptedBillingKey is not null
-			and card.encryptedBillingKey <> ''
+			and length(trim(card.encryptedBillingKey)) > 0
 		""")
 	boolean existsPaymentAvailableCard(@Param("userId") Long userId, @Param("status") CardStatus status);
 }
