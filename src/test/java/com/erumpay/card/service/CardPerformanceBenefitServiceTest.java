@@ -64,7 +64,8 @@ class CardPerformanceBenefitServiceTest {
 			cardPerformanceRepository,
 			cardBenefitRepository,
 			cardBenefitBrandRepository,
-			cardBenefitTierRepository
+			cardBenefitTierRepository,
+			new YearMonthValidator()
 		);
 	}
 

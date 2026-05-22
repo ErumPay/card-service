@@ -21,6 +21,8 @@ public interface CardRegisteredRepository extends JpaRepository<CardRegistered, 
 			Long userId,
 			CardStatus status);
 
+	List<CardRegistered> findByUserIdAndStatusNot(Long userId, CardStatus status);
+
 	Optional<CardRegistered> findByCardIdAndUserId(Long cardId, Long userId);
 
 	Optional<CardRegistered> findByCardIdAndUserIdAndStatusNot(Long cardId, Long userId, CardStatus status);
@@ -45,4 +47,15 @@ public interface CardRegisteredRepository extends JpaRepository<CardRegistered, 
 			and length(trim(card.encryptedBillingKey)) > 0
 		""")
 	boolean existsPaymentAvailableCard(@Param("userId") Long userId, @Param("status") CardStatus status);
+
+	@Query("""
+		select card
+		from CardRegistered card
+		where card.userId = :userId
+			and card.status = :status
+			and card.encryptedBillingKey is not null
+			and length(trim(card.encryptedBillingKey)) > 0
+		order by card.defaultCard desc, card.createdAt desc
+		""")
+	List<CardRegistered> findPaymentAvailableCards(@Param("userId") Long userId, @Param("status") CardStatus status);
 }

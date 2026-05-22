@@ -10,7 +10,6 @@ import com.erumpay.card.dto.CardBenefitResponse;
 import com.erumpay.card.dto.CardBenefitResponse.CardBenefitTierResponse;
 import com.erumpay.card.dto.CardPerformanceResponse;
 import com.erumpay.card.exception.CardNotFoundException;
-import com.erumpay.card.exception.InvalidYearMonthException;
 import com.erumpay.card.repository.CardBenefitBrandRepository;
 import com.erumpay.card.repository.CardBenefitRepository;
 import com.erumpay.card.repository.CardBenefitTierRepository;
@@ -34,11 +33,12 @@ public class CardPerformanceBenefitService {
 	private final CardBenefitRepository cardBenefitRepository;
 	private final CardBenefitBrandRepository cardBenefitBrandRepository;
 	private final CardBenefitTierRepository cardBenefitTierRepository;
+	private final YearMonthValidator yearMonthValidator;
 
 	// [be] 이준혁 260521 2028 | 삭제되지 않은 사용자 카드의 월 실적을 조회한다. 실적 row가 없으면 0원으로 응답한다.
 	@Transactional(readOnly = true)
 	public CardPerformanceResponse getPerformance(Long userId, Long cardId, String yearMonth) {
-		validateYearMonth(yearMonth);
+		yearMonthValidator.validate(yearMonth);
 		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
 
 		Long amount = cardPerformanceRepository.findByCardIdAndUserIdAndYearMonth(card.getCardId(), userId, yearMonth)
@@ -75,17 +75,6 @@ public class CardPerformanceBenefitService {
 				tiersByBenefitId.getOrDefault(benefit.getBenefitId(), List.of())
 			))
 			.toList();
-	}
-
-	private void validateYearMonth(String yearMonth) {
-		if (yearMonth == null || !yearMonth.matches("\\d{6}")) {
-			throw new InvalidYearMonthException();
-		}
-
-		int month = Integer.parseInt(yearMonth.substring(4, 6));
-		if (month < 1 || month > 12) {
-			throw new InvalidYearMonthException();
-		}
 	}
 
 	private CardRegistered findOwnedNonDeletedCard(Long userId, Long cardId) {
