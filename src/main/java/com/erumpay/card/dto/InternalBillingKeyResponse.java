@@ -6,14 +6,18 @@ import lombok.ToString;
 
 @Getter
 @Builder
-@ToString
+@ToString(onlyExplicitlyIncluded = true)
 public class InternalBillingKeyResponse {
 
+	@ToString.Include
 	private Long cardId;
+
+	@ToString.Include
 	private Long userId;
+
+	@ToString.Include
 	private Long cardProductId;
 
-	@ToString.Exclude
 	private String encryptedBillingKey;
 
 	private String maskedNumber;
