@@ -7,8 +7,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -53,6 +55,18 @@ public class GlobalExceptionHandler {
 		return ResponseEntity
 			.status(HttpStatus.BAD_REQUEST)
 			.body(new ErrorResponse("INVALID_REQUEST", "요청 형식 오류"));
+	}
+
+	@ExceptionHandler({
+		MissingServletRequestParameterException.class,
+		MethodArgumentTypeMismatchException.class
+	})
+	public ResponseEntity<ErrorResponse> handleInvalidRequestParameter(Exception exception) {
+		log.warn("Invalid request parameter. exceptionType={}", exception.getClass().getSimpleName());
+
+		return ResponseEntity
+			.status(HttpStatus.BAD_REQUEST)
+			.body(new ErrorResponse("INVALID_REQUEST", "요청 파라미터 오류"));
 	}
 
 	@ExceptionHandler(Throwable.class)
