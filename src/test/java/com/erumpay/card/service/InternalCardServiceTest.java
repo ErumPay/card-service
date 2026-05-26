@@ -13,9 +13,11 @@ import static org.mockito.Mockito.when;
 import com.erumpay.card.domain.entity.CardBenefit;
 import com.erumpay.card.domain.entity.CardBenefitBrand;
 import com.erumpay.card.domain.entity.CardBenefitTier;
+import com.erumpay.card.domain.entity.CardBenefitUsage;
 import com.erumpay.card.domain.entity.CardPerformance;
 import com.erumpay.card.domain.entity.CardProduct;
 import com.erumpay.card.domain.entity.CardRegistered;
+import com.erumpay.card.domain.enums.CardBenefitUsageStatus;
 import com.erumpay.card.domain.enums.BenefitType;
 import com.erumpay.card.domain.enums.CardStatus;
 import com.erumpay.card.domain.enums.DayCondition;
@@ -31,6 +33,7 @@ import com.erumpay.card.exception.InvalidYearMonthException;
 import com.erumpay.card.repository.CardBenefitBrandRepository;
 import com.erumpay.card.repository.CardBenefitRepository;
 import com.erumpay.card.repository.CardBenefitTierRepository;
+import com.erumpay.card.repository.CardBenefitUsageRepository;
 import com.erumpay.card.repository.CardPerformanceRepository;
 import com.erumpay.card.repository.CardProductRepository;
 import com.erumpay.card.repository.CardRegisteredRepository;
@@ -75,6 +78,9 @@ class InternalCardServiceTest {
 	@Mock
 	private CardBenefitTierRepository cardBenefitTierRepository;
 
+	@Mock
+	private CardBenefitUsageRepository cardBenefitUsageRepository;
+
 	private InternalCardService internalCardService;
 
 	@BeforeEach
@@ -86,6 +92,7 @@ class InternalCardServiceTest {
 			cardBenefitRepository,
 			cardBenefitBrandRepository,
 			cardBenefitTierRepository,
+			cardBenefitUsageRepository,
 			FIXED_CLOCK,
 			new YearMonthValidator()
 		);
@@ -167,6 +174,9 @@ class InternalCardServiceTest {
 		CardBenefit benefit = benefit(1000L, 100L);
 		CardBenefitBrand brand = brand(1000L, "스타벅스");
 		CardBenefitTier tier = tier(2000L, 1000L);
+		CardBenefitUsage dailyUsage = usage(10L, 1000L, 100, LocalDateTime.of(2026, 5, 20, 8, 30));
+		CardBenefitUsage monthlyUsage = usage(10L, 1000L, 200, LocalDateTime.of(2026, 5, 10, 12, 0));
+		CardBenefitUsage yearlyUsage = usage(10L, 1000L, 300, LocalDateTime.of(2026, 1, 5, 12, 0));
 
 		when(cardRegisteredRepository.findPaymentAvailableCards(1L, CardStatus.ACTIVE)).thenReturn(List.of(card));
 		when(cardProductRepository.findAllById(any())).thenReturn(List.of(product));
@@ -178,6 +188,16 @@ class InternalCardServiceTest {
 			.thenReturn(List.of(brand));
 		when(cardBenefitTierRepository.findByBenefitIdInOrderByMinPrevMonthUsageAsc(List.of(1000L)))
 			.thenReturn(List.of(tier));
+		when(cardBenefitUsageRepository
+			.findByUserIdAndCardIdInAndBenefitIdInAndStatusAndApprovedAtGreaterThanEqualAndApprovedAtLessThan(
+				eq(1L),
+				any(),
+				any(),
+				eq(CardBenefitUsageStatus.APPROVED),
+				any(),
+				any()
+			))
+			.thenReturn(List.of(dailyUsage, monthlyUsage, yearlyUsage));
 
 		InternalRecommendationSourceResponse response = internalCardService.getRecommendationSource(1L, "202605");
 
@@ -189,6 +209,18 @@ class InternalCardServiceTest {
 		assertThat(response.getCards().getFirst().getBenefits()).hasSize(1);
 		assertThat(response.getCards().getFirst().getBenefits().getFirst().getBrandNames())
 			.containsExactly("스타벅스");
+		assertThat(response.getCards().getFirst().getBenefits().getFirst().getUsage().getDailyAmount())
+			.isEqualTo(100L);
+		assertThat(response.getCards().getFirst().getBenefits().getFirst().getUsage().getDailyCount())
+			.isEqualTo(1L);
+		assertThat(response.getCards().getFirst().getBenefits().getFirst().getUsage().getMonthlyAmount())
+			.isEqualTo(300L);
+		assertThat(response.getCards().getFirst().getBenefits().getFirst().getUsage().getMonthlyCount())
+			.isEqualTo(2L);
+		assertThat(response.getCards().getFirst().getBenefits().getFirst().getUsage().getYearlyAmount())
+			.isEqualTo(600L);
+		assertThat(response.getCards().getFirst().getBenefits().getFirst().getUsage().getYearlyCount())
+			.isEqualTo(3L);
 		assertThat(response.getCards().getFirst().getBenefits().getFirst().getTiers()).hasSize(1);
 	}
 
@@ -293,5 +325,14 @@ class InternalCardServiceTest {
 		lenient().when(tier.getRate()).thenReturn(new BigDecimal("10.000"));
 		lenient().when(tier.getMonthlyLimitAmount()).thenReturn(5000L);
 		return tier;
+	}
+
+	private CardBenefitUsage usage(Long cardId, Long benefitId, Integer benefitAmount, LocalDateTime approvedAt) {
+		CardBenefitUsage usage = mock(CardBenefitUsage.class);
+		when(usage.getCardId()).thenReturn(cardId);
+		when(usage.getBenefitId()).thenReturn(benefitId);
+		when(usage.getBenefitAmount()).thenReturn(benefitAmount);
+		when(usage.getApprovedAt()).thenReturn(approvedAt);
+		return usage;
 	}
 }
