@@ -3,16 +3,19 @@ package com.erumpay.card.service;
 import com.erumpay.card.domain.entity.CardBenefit;
 import com.erumpay.card.domain.entity.CardBenefitBrand;
 import com.erumpay.card.domain.entity.CardBenefitTier;
+import com.erumpay.card.domain.entity.CardBenefitUsage;
 import com.erumpay.card.domain.entity.CardPerformance;
 import com.erumpay.card.domain.entity.CardProduct;
 import com.erumpay.card.domain.entity.CardRegistered;
+import com.erumpay.card.domain.enums.CardBenefitUsageStatus;
 import com.erumpay.card.domain.enums.CardStatus;
-import com.erumpay.card.dto.CardBenefitResponse;
-import com.erumpay.card.dto.CardBenefitResponse.CardBenefitTierResponse;
 import com.erumpay.card.dto.InternalBillingKeyResponse;
 import com.erumpay.card.dto.InternalDeactivateCardsResponse;
 import com.erumpay.card.dto.InternalDefaultCardResponse;
 import com.erumpay.card.dto.InternalRecommendationSourceResponse;
+import com.erumpay.card.dto.InternalRecommendationSourceResponse.InternalBenefitUsageResponse;
+import com.erumpay.card.dto.InternalRecommendationSourceResponse.InternalRecommendationBenefitResponse;
+import com.erumpay.card.dto.InternalRecommendationSourceResponse.InternalRecommendationBenefitTierResponse;
 import com.erumpay.card.dto.InternalRecommendationSourceResponse.InternalRecommendationCardResponse;
 import com.erumpay.card.exception.BillingKeyNotFoundException;
 import com.erumpay.card.exception.CardNotActiveException;
@@ -20,13 +23,16 @@ import com.erumpay.card.exception.CardNotFoundException;
 import com.erumpay.card.repository.CardBenefitBrandRepository;
 import com.erumpay.card.repository.CardBenefitRepository;
 import com.erumpay.card.repository.CardBenefitTierRepository;
+import com.erumpay.card.repository.CardBenefitUsageRepository;
 import com.erumpay.card.repository.CardPerformanceRepository;
 import com.erumpay.card.repository.CardProductRepository;
 import com.erumpay.card.repository.CardRegisteredRepository;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -45,6 +51,7 @@ public class InternalCardService {
 	private final CardBenefitRepository cardBenefitRepository;
 	private final CardBenefitBrandRepository cardBenefitBrandRepository;
 	private final CardBenefitTierRepository cardBenefitTierRepository;
+	private final CardBenefitUsageRepository cardBenefitUsageRepository;
 	private final Clock clock;
 	private final YearMonthValidator yearMonthValidator;
 
@@ -102,17 +109,21 @@ public class InternalCardService {
 		Map<Long, CardProduct> productsById = findProductsById(cards.stream()
 			.map(CardRegistered::getCardProductId)
 			.toList());
-		Map<Long, Long> performanceAmountsByCardId = findPerformanceAmountsByCardId(userId, yearMonth, cards.stream()
+		List<Long> cardIds = cards.stream()
 			.map(CardRegistered::getCardId)
-			.toList());
-		Map<Long, List<CardBenefitResponse>> benefitsByProductId = findBenefitsByProductId(productsById.keySet());
+			.toList();
+		Map<Long, Long> performanceAmountsByCardId = findPerformanceAmountsByCardId(userId, yearMonth, cardIds);
+		RecommendationBenefitSources benefitSources = findBenefitSourcesByProductId(productsById.keySet());
+		Map<BenefitUsageKey, InternalBenefitUsageResponse> usageByCardAndBenefit =
+			findBenefitUsagesByCardAndBenefit(userId, cardIds, benefitSources.benefitIds());
 
 		List<InternalRecommendationCardResponse> cardResponses = cards.stream()
 			.map(card -> toRecommendationCardResponse(
 				card,
 				productsById.get(card.getCardProductId()),
 				performanceAmountsByCardId.getOrDefault(card.getCardId(), 0L),
-				benefitsByProductId.getOrDefault(card.getCardProductId(), List.of())
+				benefitSources,
+				usageByCardAndBenefit
 			))
 			.toList();
 
@@ -156,11 +167,11 @@ public class InternalCardService {
 			.collect(Collectors.toMap(CardPerformance::getCardId, CardPerformance::getAmount));
 	}
 
-	private Map<Long, List<CardBenefitResponse>> findBenefitsByProductId(Collection<Long> cardProductIds) {
+	private RecommendationBenefitSources findBenefitSourcesByProductId(Collection<Long> cardProductIds) {
 		List<CardBenefit> benefits = cardBenefitRepository
 			.findByCardProductIdInOrderByCardProductIdAscPriorityDescBenefitIdAsc(cardProductIds);
 		if (benefits.isEmpty()) {
-			return Map.of();
+			return new RecommendationBenefitSources(Map.of(), Map.of(), Map.of(), List.of());
 		}
 
 		List<Long> benefitIds = benefits.stream()
@@ -169,18 +180,10 @@ public class InternalCardService {
 		Map<Long, List<String>> brandNamesByBenefitId = findBrandNamesByBenefitId(benefitIds);
 		Map<Long, List<CardBenefitTier>> tiersByBenefitId = findTiersByBenefitId(benefitIds);
 
-		return benefits.stream()
-			.collect(Collectors.groupingBy(
-				CardBenefit::getCardProductId,
-				Collectors.mapping(
-					benefit -> toBenefitResponse(
-						benefit,
-						brandNamesByBenefitId.getOrDefault(benefit.getBenefitId(), List.of()),
-						tiersByBenefitId.getOrDefault(benefit.getBenefitId(), List.of())
-					),
-					Collectors.toList()
-				)
-			));
+		Map<Long, List<CardBenefit>> benefitsByProductId = benefits.stream()
+			.collect(Collectors.groupingBy(CardBenefit::getCardProductId));
+
+		return new RecommendationBenefitSources(benefitsByProductId, brandNamesByBenefitId, tiersByBenefitId, benefitIds);
 	}
 
 	private Map<Long, List<String>> findBrandNamesByBenefitId(Collection<Long> benefitIds) {
@@ -196,15 +199,65 @@ public class InternalCardService {
 			.collect(Collectors.groupingBy(CardBenefitTier::getBenefitId));
 	}
 
+	// [be] 이준혁 260526 1104 | 추천 한도 계산에 필요한 혜택별 일/월/년 사용량을 현재 시각 기준으로 집계한다.
+	private Map<BenefitUsageKey, InternalBenefitUsageResponse> findBenefitUsagesByCardAndBenefit(
+		Long userId,
+		Collection<Long> cardIds,
+		Collection<Long> benefitIds
+	) {
+		if (cardIds.isEmpty() || benefitIds.isEmpty()) {
+			return Map.of();
+		}
+
+		LocalDate today = LocalDate.now(clock);
+		LocalDateTime dayStart = today.atStartOfDay();
+		LocalDateTime dayEnd = today.plusDays(1).atStartOfDay();
+		LocalDateTime monthStart = today.withDayOfMonth(1).atStartOfDay();
+		LocalDateTime yearStart = today.withDayOfYear(1).atStartOfDay();
+
+		List<CardBenefitUsage> usages = cardBenefitUsageRepository
+			.findByUserIdAndCardIdInAndBenefitIdInAndStatusAndApprovedAtGreaterThanEqualAndApprovedAtLessThan(
+				userId,
+				cardIds,
+				benefitIds,
+				CardBenefitUsageStatus.APPROVED,
+				yearStart,
+				dayEnd
+			);
+		Map<BenefitUsageKey, BenefitUsageAccumulator> accumulators = new HashMap<>();
+
+		usages.forEach(usage -> accumulators
+			.computeIfAbsent(new BenefitUsageKey(usage.getCardId(), usage.getBenefitId()),
+				key -> new BenefitUsageAccumulator())
+			.add(usage, dayStart, monthStart, yearStart));
+
+		return accumulators.entrySet().stream()
+			.collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().toResponse()));
+	}
+
 	private InternalRecommendationCardResponse toRecommendationCardResponse(
 		CardRegistered card,
 		CardProduct product,
 		Long performanceAmount,
-		List<CardBenefitResponse> benefits
+		RecommendationBenefitSources benefitSources,
+		Map<BenefitUsageKey, InternalBenefitUsageResponse> usageByCardAndBenefit
 	) {
 		if (product == null) {
 			throw new IllegalStateException("Card product not found for registered card.");
 		}
+		List<InternalRecommendationBenefitResponse> benefits = benefitSources.benefitsByProductId()
+			.getOrDefault(card.getCardProductId(), List.of())
+			.stream()
+			.map(benefit -> toBenefitResponse(
+				benefit,
+				benefitSources.brandNamesByBenefitId().getOrDefault(benefit.getBenefitId(), List.of()),
+				benefitSources.tiersByBenefitId().getOrDefault(benefit.getBenefitId(), List.of()),
+				usageByCardAndBenefit.getOrDefault(
+					new BenefitUsageKey(card.getCardId(), benefit.getBenefitId()),
+					emptyUsage()
+				)
+			))
+			.toList();
 
 		return InternalRecommendationCardResponse.builder()
 			.cardId(card.getCardId())
@@ -218,12 +271,13 @@ public class InternalCardService {
 			.build();
 	}
 
-	private CardBenefitResponse toBenefitResponse(
+	private InternalRecommendationBenefitResponse toBenefitResponse(
 		CardBenefit benefit,
 		List<String> brandNames,
-		List<CardBenefitTier> tiers
+		List<CardBenefitTier> tiers,
+		InternalBenefitUsageResponse usage
 	) {
-		return CardBenefitResponse.builder()
+		return InternalRecommendationBenefitResponse.builder()
 			.benefitId(benefit.getBenefitId())
 			.serviceCategory(benefit.getServiceCategory().name())
 			.benefitType(benefit.getBenefitType().name())
@@ -233,14 +287,15 @@ public class InternalCardService {
 			.dayCondition(benefit.getDayCondition().name())
 			.benefitDesc(benefit.getBenefitDesc())
 			.brandNames(brandNames)
+			.usage(usage)
 			.tiers(tiers.stream()
 				.map(this::toTierResponse)
 				.toList())
 			.build();
 	}
 
-	private CardBenefitTierResponse toTierResponse(CardBenefitTier tier) {
-		return CardBenefitTierResponse.builder()
+	private InternalRecommendationBenefitTierResponse toTierResponse(CardBenefitTier tier) {
+		return InternalRecommendationBenefitTierResponse.builder()
 			.tierId(tier.getTierId())
 			.minPrevMonthUsage(tier.getMinPrevMonthUsage())
 			.maxPrevMonthUsage(tier.getMaxPrevMonthUsage())
@@ -259,5 +314,71 @@ public class InternalCardService {
 
 	private String toTimeString(LocalTime time) {
 		return time == null ? null : time.toString();
+	}
+
+	private InternalBenefitUsageResponse emptyUsage() {
+		return InternalBenefitUsageResponse.builder()
+			.dailyAmount(0L)
+			.dailyCount(0L)
+			.monthlyAmount(0L)
+			.monthlyCount(0L)
+			.yearlyAmount(0L)
+			.yearlyCount(0L)
+			.build();
+	}
+
+	private record RecommendationBenefitSources(
+		Map<Long, List<CardBenefit>> benefitsByProductId,
+		Map<Long, List<String>> brandNamesByBenefitId,
+		Map<Long, List<CardBenefitTier>> tiersByBenefitId,
+		List<Long> benefitIds
+	) {
+	}
+
+	private record BenefitUsageKey(Long cardId, Long benefitId) {
+	}
+
+	private static class BenefitUsageAccumulator {
+
+		private long dailyAmount;
+		private long dailyCount;
+		private long monthlyAmount;
+		private long monthlyCount;
+		private long yearlyAmount;
+		private long yearlyCount;
+
+		private void add(
+			CardBenefitUsage usage,
+			LocalDateTime dayStart,
+			LocalDateTime monthStart,
+			LocalDateTime yearStart
+		) {
+			long benefitAmount = usage.getBenefitAmount();
+			LocalDateTime approvedAt = usage.getApprovedAt();
+
+			if (!approvedAt.isBefore(yearStart)) {
+				yearlyAmount += benefitAmount;
+				yearlyCount++;
+			}
+			if (!approvedAt.isBefore(monthStart)) {
+				monthlyAmount += benefitAmount;
+				monthlyCount++;
+			}
+			if (!approvedAt.isBefore(dayStart)) {
+				dailyAmount += benefitAmount;
+				dailyCount++;
+			}
+		}
+
+		private InternalBenefitUsageResponse toResponse() {
+			return InternalBenefitUsageResponse.builder()
+				.dailyAmount(dailyAmount)
+				.dailyCount(dailyCount)
+				.monthlyAmount(monthlyAmount)
+				.monthlyCount(monthlyCount)
+				.yearlyAmount(yearlyAmount)
+				.yearlyCount(yearlyCount)
+				.build();
+		}
 	}
 }
