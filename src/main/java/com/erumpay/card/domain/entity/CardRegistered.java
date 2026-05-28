@@ -31,10 +31,10 @@ public class CardRegistered {
 	@Column(name = "card_product_id", nullable = false)
 	private Long cardProductId;
 
-	@Column(name = "encrypted_billing_key", nullable = false, length = 255)
+	@Column(name = "encrypted_billing_key", length = 255)
 	private String encryptedBillingKey;
 
-	@Column(name = "masked_number", nullable = false, length = 20)
+	@Column(name = "masked_number", length = 20)
 	private String maskedNumber;
 
 	@Column(name = "card_alias", length = 50)
@@ -79,6 +79,10 @@ public class CardRegistered {
 
 	public boolean isDeleted() {
 		return status == CardStatus.DELETED;
+	}
+
+	public boolean isRegistering() {
+		return status == CardStatus.REGISTERING;
 	}
 
 	public boolean isActive() {

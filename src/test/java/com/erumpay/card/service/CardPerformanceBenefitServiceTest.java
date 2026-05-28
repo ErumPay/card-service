@@ -3,6 +3,7 @@ package com.erumpay.card.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -74,7 +75,7 @@ class CardPerformanceBenefitServiceTest {
 		CardRegistered card = card(10L, 1L, 100L);
 		CardPerformance performance = performance(350000L);
 
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 		when(cardPerformanceRepository.findByCardIdAndUserIdAndYearMonth(10L, 1L, "202605"))
 			.thenReturn(Optional.of(performance));
@@ -90,7 +91,7 @@ class CardPerformanceBenefitServiceTest {
 	void getPerformanceReturnsZeroWhenPerformanceDoesNotExist() {
 		CardRegistered card = card(10L, 1L, 100L);
 
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 		when(cardPerformanceRepository.findByCardIdAndUserIdAndYearMonth(10L, 1L, "202605"))
 			.thenReturn(Optional.empty());
@@ -105,12 +106,12 @@ class CardPerformanceBenefitServiceTest {
 		assertThatThrownBy(() -> cardPerformanceBenefitService.getPerformance(1L, 10L, "202613"))
 			.isInstanceOf(InvalidYearMonthException.class);
 
-		verify(cardRegisteredRepository, never()).findByCardIdAndUserIdAndStatusNot(any(), any(), any());
+		verify(cardRegisteredRepository, never()).findByCardIdAndUserIdAndStatusIn(any(), any(), any());
 	}
 
 	@Test
 	void getPerformanceFailsWhenCardDoesNotBelongToUser() {
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> cardPerformanceBenefitService.getPerformance(1L, 10L, "202605"))
@@ -124,7 +125,7 @@ class CardPerformanceBenefitServiceTest {
 		CardBenefitBrand brand = brand(1000L, "스타벅스");
 		CardBenefitTier tier = tier(2000L, 1000L, 300000L);
 
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 		when(cardBenefitRepository.findByCardProductIdOrderByPriorityDescBenefitIdAsc(100L))
 			.thenReturn(List.of(benefit));
@@ -156,7 +157,7 @@ class CardPerformanceBenefitServiceTest {
 		CardRegistered card = card(10L, 1L, 100L);
 		CardBenefit benefit = benefit(1000L, 100L, ServiceCategory.CAFE, BenefitType.DISCOUNT);
 
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 		when(cardBenefitRepository.findByCardProductIdOrderByPriorityDescBenefitIdAsc(100L))
 			.thenReturn(List.of(benefit));

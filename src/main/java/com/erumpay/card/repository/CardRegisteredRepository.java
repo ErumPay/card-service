@@ -17,13 +17,18 @@ public interface CardRegisteredRepository extends JpaRepository<CardRegistered, 
 			Long cardProductId,
 			Collection<CardStatus> statuses);
 
-	List<CardRegistered> findByUserIdAndStatusNotOrderByDefaultCardDescCreatedAtDesc(
+	List<CardRegistered> findByUserIdAndStatusInOrderByDefaultCardDescCreatedAtDesc(
 			Long userId,
-			CardStatus status);
+			Collection<CardStatus> statuses);
 
 	List<CardRegistered> findByUserIdAndStatusNot(Long userId, CardStatus status);
 
 	Optional<CardRegistered> findByCardIdAndUserId(Long cardId, Long userId);
+
+	Optional<CardRegistered> findByCardIdAndUserIdAndStatusIn(
+			Long cardId,
+			Long userId,
+			Collection<CardStatus> statuses);
 
 	Optional<CardRegistered> findByCardIdAndUserIdAndStatusNot(Long cardId, Long userId, CardStatus status);
 
@@ -34,7 +39,7 @@ public interface CardRegisteredRepository extends JpaRepository<CardRegistered, 
 			CardStatus status,
 			Long cardId);
 
-	boolean existsByUserIdAndStatusNot(Long userId, CardStatus status);
+	boolean existsByUserIdAndStatusIn(Long userId, Collection<CardStatus> statuses);
 
 	boolean existsByUserIdAndStatus(Long userId, CardStatus status);
 

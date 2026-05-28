@@ -28,6 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CardPerformanceBenefitService {
 
+	private static final List<CardStatus> VISIBLE_CARD_STATUSES = List.of(
+		CardStatus.ACTIVE,
+		CardStatus.PAUSED,
+		CardStatus.EXPIRED
+	);
+
 	private final CardRegisteredRepository cardRegisteredRepository;
 	private final CardPerformanceRepository cardPerformanceRepository;
 	private final CardBenefitRepository cardBenefitRepository;
@@ -78,7 +84,7 @@ public class CardPerformanceBenefitService {
 	}
 
 	private CardRegistered findOwnedNonDeletedCard(Long userId, Long cardId) {
-		return cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(cardId, userId, CardStatus.DELETED)
+		return cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(cardId, userId, VISIBLE_CARD_STATUSES)
 			.orElseThrow(CardNotFoundException::new);
 	}
 

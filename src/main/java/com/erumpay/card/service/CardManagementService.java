@@ -28,6 +28,11 @@ public class CardManagementService {
 	private static final String CARD_NOT_FOUND = "CARD_NOT_FOUND";
 	private static final String CARD_NOT_ACTIVE = "CARD_NOT_ACTIVE";
 	private static final String BILLING_KEY_NOT_FOUND = "BILLING_KEY_NOT_FOUND";
+	private static final List<CardStatus> VISIBLE_CARD_STATUSES = List.of(
+		CardStatus.ACTIVE,
+		CardStatus.PAUSED,
+		CardStatus.EXPIRED
+	);
 
 	private final CardRegisteredRepository cardRegisteredRepository;
 	private final CardProductRepository cardProductRepository;
@@ -37,7 +42,7 @@ public class CardManagementService {
 	@Transactional(readOnly = true)
 	public List<CardResponse> getCards(Long userId) {
 		List<CardRegistered> cards = cardRegisteredRepository
-			.findByUserIdAndStatusNotOrderByDefaultCardDescCreatedAtDesc(userId, CardStatus.DELETED);
+			.findByUserIdAndStatusInOrderByDefaultCardDescCreatedAtDesc(userId, VISIBLE_CARD_STATUSES);
 		Map<Long, CardProduct> products = findProductsById(cards.stream()
 			.map(CardRegistered::getCardProductId)
 			.toList());
@@ -50,7 +55,7 @@ public class CardManagementService {
 	// [be] 이준혁 260521 1602 | userId와 cardId가 함께 맞는 삭제되지 않은 카드만 상세 조회한다.
 	@Transactional(readOnly = true)
 	public CardResponse getCard(Long userId, Long cardId) {
-		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
+		CardRegistered card = findOwnedVisibleCard(userId, cardId);
 		CardProduct product = findProductById(card.getCardProductId());
 		return toResponse(card, product);
 	}
@@ -58,14 +63,14 @@ public class CardManagementService {
 	// [be] 이준혁 260521 1602 | 카드 별칭을 수정한다. 공백만 있는 별칭은 null로 바꿔 별칭 제거로 처리한다.
 	@Transactional
 	public void updateAlias(Long userId, Long cardId, CardAliasUpdateRequest request) {
-		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
+		CardRegistered card = findOwnedVisibleCard(userId, cardId);
 		card.updateAlias(request.normalizedCardAlias());
 	}
 
 	// [be] 이준혁 260521 1602 | ACTIVE 카드만 주카드로 지정하고, 기존 주카드를 먼저 해제해 DB unique 충돌을 피한다.
 	@Transactional
 	public void setDefault(Long userId, Long cardId) {
-		CardRegistered targetCard = findOwnedNonDeletedCard(userId, cardId);
+		CardRegistered targetCard = findOwnedVisibleCard(userId, cardId);
 		if (!targetCard.isActive()) {
 			throw new CardNotActiveException();
 		}
@@ -85,6 +90,9 @@ public class CardManagementService {
 		if (card.isDeleted()) {
 			return;
 		}
+		if (card.isRegistering()) {
+			throw new CardNotFoundException();
+		}
 
 		boolean defaultCard = card.isDefaultCard();
 		card.delete(LocalDateTime.now(clock));
@@ -103,7 +111,7 @@ public class CardManagementService {
 	// [be] 이준혁 260521 1602 | 사용자에게 결제 가능한 ACTIVE 카드가 1장 이상 있는지 확인한다.
 	@Transactional(readOnly = true)
 	public PaymentAvailabilityResponse checkUserPaymentAvailability(Long userId) {
-		if (!cardRegisteredRepository.existsByUserIdAndStatusNot(userId, CardStatus.DELETED)) {
+		if (!cardRegisteredRepository.existsByUserIdAndStatusIn(userId, VISIBLE_CARD_STATUSES)) {
 			return PaymentAvailabilityResponse.unavailable(CARD_NOT_FOUND);
 		}
 		if (!cardRegisteredRepository.existsByUserIdAndStatus(userId, CardStatus.ACTIVE)) {
@@ -118,7 +126,7 @@ public class CardManagementService {
 	// [be] 이준혁 260521 1602 | 특정 카드 1장이 결제 가능한 ACTIVE 카드이고 billing key를 갖는지 확인한다.
 	@Transactional(readOnly = true)
 	public PaymentAvailabilityResponse checkCardPaymentAvailability(Long userId, Long cardId) {
-		CardRegistered card = findOwnedCard(userId, cardId);
+		CardRegistered card = findOwnedVisibleCard(userId, cardId);
 		if (!card.isActive()) {
 			return PaymentAvailabilityResponse.unavailable(CARD_NOT_ACTIVE);
 		}
@@ -128,8 +136,8 @@ public class CardManagementService {
 		return PaymentAvailabilityResponse.available();
 	}
 
-	private CardRegistered findOwnedNonDeletedCard(Long userId, Long cardId) {
-		return cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(cardId, userId, CardStatus.DELETED)
+	private CardRegistered findOwnedVisibleCard(Long userId, Long cardId) {
+		return cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(cardId, userId, VISIBLE_CARD_STATUSES)
 			.orElseThrow(CardNotFoundException::new);
 	}
 

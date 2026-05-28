@@ -25,6 +25,7 @@ public class CardRegistrationService {
 
 	private static final DateTimeFormatter EXPIRY_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
 	private static final List<CardStatus> DUPLICATE_CHECK_STATUSES = List.of(
+			CardStatus.REGISTERING,
 			CardStatus.ACTIVE,
 			CardStatus.PAUSED,
 			CardStatus.EXPIRED);
