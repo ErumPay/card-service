@@ -70,7 +70,7 @@ public class InternalCardService {
 			.cardId(card.getCardId())
 			.userId(card.getUserId())
 			.cardProductId(card.getCardProductId())
-			.encryptedBillingKey(card.getEncryptedBillingKey())
+			.billingKey(card.getEncryptedBillingKey())
 			.maskedNumber(card.getMaskedNumber())
 			.build();
 	}

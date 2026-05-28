@@ -18,7 +18,7 @@ public class InternalBillingKeyResponse {
 	@ToString.Include
 	private Long cardProductId;
 
-	private String encryptedBillingKey;
+	private String billingKey;
 
 	private String maskedNumber;
 }

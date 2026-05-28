@@ -99,7 +99,7 @@ class InternalCardServiceTest {
 	}
 
 	@Test
-	void getBillingKeyReturnsEncryptedBillingKeyForActiveOwnedCard() {
+	void getBillingKeyReturnsBillingKeyForActiveOwnedCard() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "encrypted-key");
 		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
 			.thenReturn(Optional.of(card));
@@ -108,7 +108,7 @@ class InternalCardServiceTest {
 
 		assertThat(response.getCardId()).isEqualTo(10L);
 		assertThat(response.getUserId()).isEqualTo(1L);
-		assertThat(response.getEncryptedBillingKey()).isEqualTo("encrypted-key");
+		assertThat(response.getBillingKey()).isEqualTo("encrypted-key");
 		assertThat(response.toString()).doesNotContain("encrypted-key");
 	}
 
