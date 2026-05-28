@@ -34,6 +34,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -243,14 +244,15 @@ public class CardRegistrationService {
 	) {
 		try {
 			CardRegistered activeCard = Objects.requireNonNull(transactionTemplate.execute(status -> {
-				boolean shouldBeDefault = shouldBeDefault(request);
+				Optional<CardRegistered> currentDefault = cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(
+					request.getUserId(),
+					CardStatus.ACTIVE
+				);
+				boolean shouldBeDefault = request.defaultRequested() || currentDefault.isEmpty();
 				if (shouldBeDefault) {
-					cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(
-						request.getUserId(),
-						CardStatus.ACTIVE
-					).ifPresent(currentDefault -> {
-						currentDefault.unsetDefault();
-						cardRegisteredRepository.save(currentDefault);
+					currentDefault.ifPresent(card -> {
+						card.unsetDefault();
+						cardRegisteredRepository.save(card);
 					});
 				}
 				registeringCard.activate(issueResponse.billingKey(), issueResponse.maskedNumber(), shouldBeDefault);
@@ -262,14 +264,6 @@ public class CardRegistrationService {
 			trySoftDeleteAfterActivationFailure(registeringCard);
 			throw new CardRegistrationFailedException(exception);
 		}
-	}
-
-	private boolean shouldBeDefault(CardRegisterRequest request) {
-		return request.defaultRequested()
-			|| cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(
-				request.getUserId(),
-				CardStatus.ACTIVE
-			).isEmpty();
 	}
 
 	private void compensateBillingKey(Long payCardId, String billingKey, RuntimeException originalException) {
