@@ -59,6 +59,9 @@ public class InternalCardService {
 	@Transactional(readOnly = true)
 	public InternalBillingKeyResponse getBillingKey(Long userId, Long cardId) {
 		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
+		if (card.isRegistering()) {
+			throw new CardNotFoundException();
+		}
 		if (!card.isActive()) {
 			throw new CardNotActiveException();
 		}

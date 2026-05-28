@@ -25,11 +25,13 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -75,6 +77,10 @@ class CardManagementServiceTest {
 		assertThat(responses.getFirst().getCardCompany()).isEqualTo("롯데카드");
 		assertThat(responses.getFirst().getCardName()).isEqualTo("LOCA 365 카드");
 		assertThat(responses.getFirst().getIsDefault()).isTrue();
+		ArgumentCaptor<Collection<CardStatus>> statusesCaptor = ArgumentCaptor.forClass(Collection.class);
+		verify(cardRegisteredRepository)
+			.findByUserIdAndStatusInOrderByDefaultCardDescCreatedAtDesc(eq(1L), statusesCaptor.capture());
+		assertVisibleStatuses(statusesCaptor.getValue());
 	}
 
 	@Test
@@ -270,6 +276,18 @@ class CardManagementServiceTest {
 
 		assertThat(response.isAvailable()).isTrue();
 		assertThat(response.getReason()).isNull();
+		ArgumentCaptor<Collection<CardStatus>> statusesCaptor = ArgumentCaptor.forClass(Collection.class);
+		verify(cardRegisteredRepository)
+			.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), statusesCaptor.capture());
+		assertVisibleStatuses(statusesCaptor.getValue());
+	}
+
+	private void assertVisibleStatuses(Collection<CardStatus> statuses) {
+		assertThat(statuses).containsExactlyInAnyOrder(
+			CardStatus.ACTIVE,
+			CardStatus.PAUSED,
+			CardStatus.EXPIRED
+		);
 	}
 
 	private CardRegistered card(

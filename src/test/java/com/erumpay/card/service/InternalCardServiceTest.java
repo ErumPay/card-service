@@ -132,6 +132,16 @@ class InternalCardServiceTest {
 	}
 
 	@Test
+	void getBillingKeyFailsAsNotFoundWhenCardIsRegistering() {
+		CardRegistered card = card(10L, 1L, 100L, CardStatus.REGISTERING, false, null);
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+			.thenReturn(Optional.of(card));
+
+		assertThatThrownBy(() -> internalCardService.getBillingKey(1L, 10L))
+			.isInstanceOf(CardNotFoundException.class);
+	}
+
+	@Test
 	void getBillingKeyFailsWhenBillingKeyDoesNotExist() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "   ");
 		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
@@ -276,6 +286,7 @@ class InternalCardServiceTest {
 		lenient().when(card.getEncryptedBillingKey()).thenReturn(billingKey);
 		lenient().when(card.getStatus()).thenReturn(status);
 		lenient().when(card.isDefaultCard()).thenReturn(defaultCard);
+		lenient().when(card.isRegistering()).thenReturn(status == CardStatus.REGISTERING);
 		lenient().when(card.isActive()).thenReturn(status == CardStatus.ACTIVE);
 		lenient().when(card.hasBillingKey()).thenReturn(billingKey != null && !billingKey.isBlank());
 		return card;

@@ -30,11 +30,13 @@ import com.erumpay.card.repository.CardPerformanceRepository;
 import com.erumpay.card.repository.CardRegisteredRepository;
 import java.math.BigDecimal;
 import java.time.LocalTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -85,6 +87,10 @@ class CardPerformanceBenefitServiceTest {
 		assertThat(response.getCardId()).isEqualTo(10L);
 		assertThat(response.getYearMonth()).isEqualTo("202605");
 		assertThat(response.getAmount()).isEqualTo(350000L);
+		ArgumentCaptor<Collection<CardStatus>> statusesCaptor = ArgumentCaptor.forClass(Collection.class);
+		verify(cardRegisteredRepository)
+			.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), statusesCaptor.capture());
+		assertVisibleStatuses(statusesCaptor.getValue());
 	}
 
 	@Test
@@ -170,6 +176,14 @@ class CardPerformanceBenefitServiceTest {
 
 		assertThat(responses.getFirst().getBrandNames()).isEmpty();
 		assertThat(responses.getFirst().getTiers()).isEmpty();
+	}
+
+	private void assertVisibleStatuses(Collection<CardStatus> statuses) {
+		assertThat(statuses).containsExactlyInAnyOrder(
+			CardStatus.ACTIVE,
+			CardStatus.PAUSED,
+			CardStatus.EXPIRED
+		);
 	}
 
 	private CardRegistered card(Long cardId, Long userId, Long cardProductId) {
