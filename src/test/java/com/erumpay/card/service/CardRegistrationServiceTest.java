@@ -26,7 +26,6 @@ import com.erumpay.card.dto.client.BillingKeyIssueResponse;
 import com.erumpay.card.exception.BillingKeyIssueFailedException;
 import com.erumpay.card.exception.BillingKeyIssuePendingException;
 import com.erumpay.card.exception.BillingKeyIssueUnknownException;
-import com.erumpay.card.exception.BinMismatchException;
 import com.erumpay.card.exception.CardProductNotFoundException;
 import com.erumpay.card.exception.CardRegistrationFailedException;
 import com.erumpay.card.exception.DuplicateCardRegistrationException;
@@ -89,20 +88,8 @@ class CardRegistrationServiceTest {
 	}
 
 	@Test
-	void registerFailsWhenMockBinDoesNotMatchCardNumber() {
-		CardRegisterRequest request = request("800000", "8100001234567890");
-
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
-			.isInstanceOf(BinMismatchException.class);
-
-		verify(cardProductRepository, never()).findByMockBin(any());
-		verify(cardRegisteredRepository, never()).existsByUserIdAndCardProductIdAndStatusIn(any(), any(), any());
-		verify(authServiceClient, never()).getUserInfo(any());
-	}
-
-	@Test
 	void registerFailsWhenExpiryYmHasInvalidMonth() {
-		CardRegisterRequest request = request("800000", "8000001234567890", "202613");
+		CardRegisterRequest request = request("8000001234567890", "202613");
 
 		assertThatThrownBy(() -> cardRegistrationService.register(request))
 			.isInstanceOf(InvalidExpiryYmException.class);
@@ -114,7 +101,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerFailsWhenExpiryYmIsPastMonth() {
-		CardRegisterRequest request = request("800000", "8000001234567890", "202504");
+		CardRegisterRequest request = request("8000001234567890", "202504");
 
 		assertThatThrownBy(() -> cardRegistrationService.register(request))
 			.isInstanceOf(InvalidExpiryYmException.class);
@@ -126,7 +113,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerFailsWhenCardProductDoesNotExist() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> cardRegistrationService.register(request))
@@ -138,7 +125,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerFailsWhenSameCardProductAlreadyRegistered() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 
 		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
@@ -154,7 +141,7 @@ class CardRegistrationServiceTest {
 	@Test
 	@SuppressWarnings("unchecked")
 	void duplicateCheckIncludesRegisteringStatus() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
 
@@ -178,7 +165,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerCreatesRegisteringCardAndActivatesWithBillingKey() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
 
@@ -194,6 +181,7 @@ class CardRegistrationServiceTest {
 		assertThat(response.getIsDefault()).isTrue();
 		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
 
+		verify(cardProductRepository).findByMockBin("800000");
 		ArgumentCaptor<BillingKeyIssueRequest> issueRequestCaptor = ArgumentCaptor.forClass(BillingKeyIssueRequest.class);
 		verify(billingKeyServiceClient).issue(issueRequestCaptor.capture());
 		BillingKeyIssueRequest issueRequest = issueRequestCaptor.getValue();
@@ -204,7 +192,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerActivatesCardWhenBillingKeyServiceReturnsActiveEcho() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("102", "existing-billing-key", "8000-****-****-1234"));
 
@@ -216,7 +204,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerUsesSixDigitBirthDateAsIs() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
 		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "900101", "ACTIVE"));
@@ -230,7 +218,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerFailsBeforeCreatingRowWhenBirthDateIsInvalid() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 
 		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
@@ -247,7 +235,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerFailsBeforeCreatingRowWhenUserIsNotActive() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 
 		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
@@ -264,7 +252,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerSoftDeletesRegisteringCardWhenBillingKeyIsPending() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("105", null, null));
 
@@ -278,7 +266,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerSoftDeletesRegisteringCardWhenBillingKeyIssueFailsExplicitly() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("200", null, null));
 
@@ -292,7 +280,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerSoftDeletesRegisteringCardWhenBillingKeyIssueSuccessCodeHasBlankBillingKey() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", " ", "8000-****-****-1234"));
 
@@ -306,7 +294,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerSoftDeletesRegisteringCardWhenBillingKeyServiceReturnsDefiniteHttpFailure() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
 		FeignException badRequest = mock(FeignException.class);
@@ -323,7 +311,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerPreservesRegisteringCardWhenBillingKeyIssueResultIsUnknown() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
 		FeignException unavailable = mock(FeignException.class);
@@ -342,7 +330,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerRetriesOnceWhenBillingKeyIssueThrowsRuntimeException() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
 		when(billingKeyServiceClient.issue(any()))
@@ -357,7 +345,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerUnsetsCurrentDefaultWhenDefaultRequested() {
-		CardRegisterRequest request = request("800000", "8000001234567890", "202812", true);
+		CardRegisterRequest request = request("8000001234567890", "202812", true);
 		CardProduct cardProduct = cardProduct(10L);
 		CardRegistered currentDefault = CardRegistered.registering(1L, 99L, "기존 카드", "202812");
 		ReflectionTestUtils.setField(currentDefault, "cardId", 90L);
@@ -375,7 +363,7 @@ class CardRegistrationServiceTest {
 
 	@Test
 	void registerCompensatesBillingKeyWhenActivationFails() {
-		CardRegisterRequest request = request("800000", "8000001234567890");
+		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 
 		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
@@ -440,18 +428,17 @@ class CardRegistrationServiceTest {
 		lenient().when(billingKeyServiceClient.issue(any())).thenReturn(issueResponse);
 	}
 
-	private CardRegisterRequest request(String mockBin, String cardNumber) {
-		return request(mockBin, cardNumber, "202812");
+	private CardRegisterRequest request(String cardNumber) {
+		return request(cardNumber, "202812");
 	}
 
-	private CardRegisterRequest request(String mockBin, String cardNumber, String expiryYm) {
-		return request(mockBin, cardNumber, expiryYm, false);
+	private CardRegisterRequest request(String cardNumber, String expiryYm) {
+		return request(cardNumber, expiryYm, false);
 	}
 
-	private CardRegisterRequest request(String mockBin, String cardNumber, String expiryYm, Boolean isDefault) {
+	private CardRegisterRequest request(String cardNumber, String expiryYm, Boolean isDefault) {
 		return new CardRegisterRequest(
 			1L,
-			mockBin,
 			cardNumber,
 			expiryYm,
 			"123",

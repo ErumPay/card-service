@@ -16,7 +16,6 @@ import com.erumpay.card.exception.AuthServiceUnavailableException;
 import com.erumpay.card.exception.BillingKeyIssueFailedException;
 import com.erumpay.card.exception.BillingKeyIssuePendingException;
 import com.erumpay.card.exception.BillingKeyIssueUnknownException;
-import com.erumpay.card.exception.BinMismatchException;
 import com.erumpay.card.exception.CardProductNotFoundException;
 import com.erumpay.card.exception.CardRegistrationFailedException;
 import com.erumpay.card.exception.DuplicateCardRegistrationException;
@@ -67,10 +66,9 @@ public class CardRegistrationService {
 
 	// [be] 이준혁 260521 1602 | 카드 등록 요청의 기본 검증, 상품 조회, 중복 등록 여부를 먼저 확인한다.
 	public CardRegisterResponse register(CardRegisterRequest request) {
-		validateMockBinMatchesCardNumber(request.getMockBin(), request.getCardNumber());
 		validateExpiryYm(request.getExpiryYm());
 
-		CardProduct cardProduct = cardProductRepository.findByMockBin(request.getMockBin())
+		CardProduct cardProduct = cardProductRepository.findByMockBin(request.mockBin())
 			.orElseThrow(CardProductNotFoundException::new);
 
 		validateDuplicateRegistration(request.getUserId(), cardProduct.getCardProductId());
@@ -95,13 +93,6 @@ public class CardRegistrationService {
 		}
 
 		return activateRegisteredCard(request, cardProduct, registeringCard, issueResponse);
-	}
-
-	// [be] 이준혁 260521 1602 | 사용자가 보낸 mockBin과 실제 카드번호 앞 6자리가 같은지 확인한다.
-	private void validateMockBinMatchesCardNumber(String mockBin, String cardNumber) {
-		if (!cardNumber.startsWith(mockBin)) {
-			throw new BinMismatchException();
-		}
 	}
 
 	// [be] 이준혁 260521 1602 | 유효기간이 yyyyMM 형식이고 현재 월보다 과거가 아닌지 확인한다.
