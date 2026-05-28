@@ -59,6 +59,22 @@ public class CardRegistered {
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
 
+	public static CardRegistered registering(
+		Long userId,
+		Long cardProductId,
+		String cardAlias,
+		String expiryYm
+	) {
+		CardRegistered card = new CardRegistered();
+		card.userId = userId;
+		card.cardProductId = cardProductId;
+		card.cardAlias = cardAlias;
+		card.expiryYm = expiryYm;
+		card.defaultCard = false;
+		card.status = CardStatus.REGISTERING;
+		return card;
+	}
+
 	public void updateAlias(String cardAlias) {
 		this.cardAlias = cardAlias;
 	}
@@ -75,6 +91,14 @@ public class CardRegistered {
 		this.status = CardStatus.DELETED;
 		this.deletedAt = deletedAt;
 		this.defaultCard = false;
+	}
+
+	public void activate(String billingKey, String maskedNumber, boolean defaultCard) {
+		this.encryptedBillingKey = billingKey;
+		this.maskedNumber = maskedNumber;
+		this.defaultCard = defaultCard;
+		this.status = CardStatus.ACTIVE;
+		this.deletedAt = null;
 	}
 
 	public boolean isDeleted() {

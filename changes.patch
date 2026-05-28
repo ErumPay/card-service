@@ -1,0 +1,889 @@
+﻿diff --git a/build.gradle b/build.gradle
+index 0f78d72..8fbf1b2 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -17,20 +17,33 @@ repositories {
+ 	mavenCentral()
+ }
+ 
++ext {
++	set('springCloudVersion', "2025.0.2")
++}
++
++dependencyManagement {
++	imports {
++		mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
++	}
++}
++
+ dependencies {
+ 	implementation 'org.springframework.boot:spring-boot-starter'
+ 	implementation 'org.springframework.boot:spring-boot-starter-web'
+ 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+ 	implementation 'org.springframework.boot:spring-boot-starter-validation'
++	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
+ 	compileOnly 'org.projectlombok:lombok'
+ 	annotationProcessor 'org.projectlombok:lombok'
+ 	runtimeOnly 'com.mysql:mysql-connector-j'
+ 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+ 	testCompileOnly 'org.projectlombok:lombok'
+ 	testAnnotationProcessor 'org.projectlombok:lombok'
++	testRuntimeOnly 'com.h2database:h2'
+ 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+ }
+ 
+ tasks.named('test') {
+ 	useJUnitPlatform()
++	jvmArgs '-XX:+EnableDynamicAgentLoading'
+ }
+diff --git a/src/main/java/com/erumpay/card/CardServiceApplication.java b/src/main/java/com/erumpay/card/CardServiceApplication.java
+index 545c7d8..4ec4b95 100644
+--- a/src/main/java/com/erumpay/card/CardServiceApplication.java
++++ b/src/main/java/com/erumpay/card/CardServiceApplication.java
+@@ -2,7 +2,9 @@ package com.erumpay.card;
+ 
+ import org.springframework.boot.SpringApplication;
+ import org.springframework.boot.autoconfigure.SpringBootApplication;
++import org.springframework.cloud.openfeign.EnableFeignClients;
+ 
++@EnableFeignClients
+ @SpringBootApplication
+ public class CardServiceApplication {
+ 
+diff --git a/src/main/java/com/erumpay/card/controller/CardController.java b/src/main/java/com/erumpay/card/controller/CardController.java
+index 455c6f7..fc1274e 100644
+--- a/src/main/java/com/erumpay/card/controller/CardController.java
++++ b/src/main/java/com/erumpay/card/controller/CardController.java
+@@ -6,6 +6,7 @@ import com.erumpay.card.dto.CardBinValidateResponse;
+ import com.erumpay.card.dto.CardBenefitResponse;
+ import com.erumpay.card.dto.CardPerformanceResponse;
+ import com.erumpay.card.dto.CardRegisterRequest;
++import com.erumpay.card.dto.CardRegisterResponse;
+ import com.erumpay.card.dto.CardResponse;
+ import com.erumpay.card.dto.PaymentAvailabilityResponse;
+ import com.erumpay.card.service.CardBinValidationService;
+@@ -15,6 +16,7 @@ import com.erumpay.card.service.CardRegistrationService;
+ import jakarta.validation.Valid;
+ import java.util.List;
+ import lombok.RequiredArgsConstructor;
++import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
+ import org.springframework.web.bind.annotation.DeleteMapping;
+ import org.springframework.web.bind.annotation.GetMapping;
+@@ -37,9 +39,10 @@ public class CardController {
+ 	private final CardPerformanceBenefitService cardPerformanceBenefitService;
+ 
+ 	@PostMapping
+-	public ResponseEntity<Void> register(@Valid @RequestBody CardRegisterRequest request) {
+-		cardRegistrationService.register(request);
+-		return ResponseEntity.noContent().build();
++	public ResponseEntity<CardRegisterResponse> register(@Valid @RequestBody CardRegisterRequest request) {
++		return ResponseEntity
++			.status(HttpStatus.CREATED)
++			.body(cardRegistrationService.register(request));
+ 	}
+ 
+ 	@PostMapping("/bin/validate")
+diff --git a/src/main/java/com/erumpay/card/domain/entity/CardRegistered.java b/src/main/java/com/erumpay/card/domain/entity/CardRegistered.java
+index 3004276..5c15171 100644
+--- a/src/main/java/com/erumpay/card/domain/entity/CardRegistered.java
++++ b/src/main/java/com/erumpay/card/domain/entity/CardRegistered.java
+@@ -59,6 +59,22 @@ public class CardRegistered {
+ 	@Column(name = "deleted_at")
+ 	private LocalDateTime deletedAt;
+ 
++	public static CardRegistered registering(
++		Long userId,
++		Long cardProductId,
++		String cardAlias,
++		String expiryYm
++	) {
++		CardRegistered card = new CardRegistered();
++		card.userId = userId;
++		card.cardProductId = cardProductId;
++		card.cardAlias = cardAlias;
++		card.expiryYm = expiryYm;
++		card.defaultCard = false;
++		card.status = CardStatus.REGISTERING;
++		return card;
++	}
++
+ 	public void updateAlias(String cardAlias) {
+ 		this.cardAlias = cardAlias;
+ 	}
+@@ -77,6 +93,14 @@ public class CardRegistered {
+ 		this.defaultCard = false;
+ 	}
+ 
++	public void activate(String billingKey, String maskedNumber, boolean defaultCard) {
++		this.encryptedBillingKey = billingKey;
++		this.maskedNumber = maskedNumber;
++		this.defaultCard = defaultCard;
++		this.status = CardStatus.ACTIVE;
++		this.deletedAt = null;
++	}
++
+ 	public boolean isDeleted() {
+ 		return status == CardStatus.DELETED;
+ 	}
+diff --git a/src/main/java/com/erumpay/card/exception/BillingKeyNotIntegratedException.java b/src/main/java/com/erumpay/card/exception/BillingKeyNotIntegratedException.java
+deleted file mode 100644
+index 1f2ab1b..0000000
+--- a/src/main/java/com/erumpay/card/exception/BillingKeyNotIntegratedException.java
++++ /dev/null
+@@ -1,14 +0,0 @@
+-package com.erumpay.card.exception;
+-
+-import org.springframework.http.HttpStatus;
+-
+-public class BillingKeyNotIntegratedException extends CardServiceException {
+-
+-	public BillingKeyNotIntegratedException() {
+-		super(
+-			HttpStatus.NOT_IMPLEMENTED,
+-			"BILLING_KEY_NOT_INTEGRATED",
+-			"billing-key-service 연동 후 카드 등록이 가능합니다."
+-		);
+-	}
+-}
+diff --git a/src/main/java/com/erumpay/card/service/CardRegistrationService.java b/src/main/java/com/erumpay/card/service/CardRegistrationService.java
+index aa76d06..b8d827e 100644
+--- a/src/main/java/com/erumpay/card/service/CardRegistrationService.java
++++ b/src/main/java/com/erumpay/card/service/CardRegistrationService.java
+@@ -1,55 +1,102 @@
+ package com.erumpay.card.service;
+ 
++import com.erumpay.card.client.AuthServiceClient;
++import com.erumpay.card.client.BillingKeyServiceClient;
+ import com.erumpay.card.domain.entity.CardProduct;
++import com.erumpay.card.domain.entity.CardRegistered;
+ import com.erumpay.card.domain.enums.CardStatus;
+ import com.erumpay.card.dto.CardRegisterRequest;
+-import com.erumpay.card.exception.BillingKeyNotIntegratedException;
++import com.erumpay.card.dto.CardRegisterResponse;
++import com.erumpay.card.dto.client.AuthUserInfoResponse;
++import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
++import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
++import com.erumpay.card.dto.client.BillingKeyIssueRequest;
++import com.erumpay.card.dto.client.BillingKeyIssueResponse;
++import com.erumpay.card.exception.AuthServiceUnavailableException;
++import com.erumpay.card.exception.BillingKeyIssueFailedException;
++import com.erumpay.card.exception.BillingKeyIssuePendingException;
++import com.erumpay.card.exception.BillingKeyIssueUnknownException;
+ import com.erumpay.card.exception.BinMismatchException;
+ import com.erumpay.card.exception.CardProductNotFoundException;
++import com.erumpay.card.exception.CardRegistrationFailedException;
+ import com.erumpay.card.exception.DuplicateCardRegistrationException;
+ import com.erumpay.card.exception.InvalidExpiryYmException;
++import com.erumpay.card.exception.InvalidUserBirthDateException;
++import com.erumpay.card.exception.UserNotActiveException;
++import com.erumpay.card.exception.UserNotFoundException;
+ import com.erumpay.card.repository.CardProductRepository;
+ import com.erumpay.card.repository.CardRegisteredRepository;
++import feign.FeignException;
+ import java.time.Clock;
++import java.time.LocalDateTime;
+ import java.time.YearMonth;
+ import java.time.format.DateTimeFormatter;
+ import java.time.format.DateTimeParseException;
+ import java.util.List;
++import java.util.Objects;
+ import lombok.RequiredArgsConstructor;
++import lombok.extern.slf4j.Slf4j;
+ import org.springframework.stereotype.Service;
+-import org.springframework.transaction.annotation.Transactional;
++import org.springframework.transaction.support.TransactionTemplate;
+ 
++@Slf4j
+ @Service
+ @RequiredArgsConstructor
+ public class CardRegistrationService {
+ 
+ 	private static final DateTimeFormatter EXPIRY_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
++	private static final String USER_STATUS_ACTIVE = "ACTIVE";
++	private static final String BILLING_KEY_ISSUE_SUCCESS = "100";
++	private static final String BILLING_KEY_ISSUE_ACTIVE_ECHO = "102";
++	private static final String BILLING_KEY_ISSUE_PENDING = "105";
++	private static final String BILLING_KEY_DELETE_SUCCESS = "100";
+ 	private static final List<CardStatus> DUPLICATE_CHECK_STATUSES = List.of(
+-			CardStatus.REGISTERING,
+-			CardStatus.ACTIVE,
+-			CardStatus.PAUSED,
+-			CardStatus.EXPIRED);
++		CardStatus.REGISTERING,
++		CardStatus.ACTIVE,
++		CardStatus.PAUSED,
++		CardStatus.EXPIRED
++	);
+ 
+ 	private final CardProductRepository cardProductRepository;
+ 	private final CardRegisteredRepository cardRegisteredRepository;
++	private final AuthServiceClient authServiceClient;
++	private final BillingKeyServiceClient billingKeyServiceClient;
++	private final TransactionTemplate transactionTemplate;
+ 	private final Clock clock;
+ 
+-	// [be] 이준혁 260521 1602 | 카드 등록 요청의 기본 검증, 카드 상품 조회, 중복 등록 여부를 순서대로 확인한다.
+-	// [be] 이준혁 260521 1602 | billing-key-service 연동 전이므로 카드 원본정보를 저장하지 않고 501로 중단한다.
+-	@Transactional(readOnly = true)
+-	public void register(CardRegisterRequest request) {
++	// [be] 이준혁 260521 1602 | 카드 등록 요청의 기본 검증, 상품 조회, 중복 등록 여부를 먼저 확인한다.
++	public CardRegisterResponse register(CardRegisterRequest request) {
+ 		validateMockBinMatchesCardNumber(request.getMockBin(), request.getCardNumber());
+ 		validateExpiryYm(request.getExpiryYm());
+ 
+ 		CardProduct cardProduct = cardProductRepository.findByMockBin(request.getMockBin())
+-				.orElseThrow(CardProductNotFoundException::new);
++			.orElseThrow(CardProductNotFoundException::new);
+ 
+ 		validateDuplicateRegistration(request.getUserId(), cardProduct.getCardProductId());
+ 
+-		throw new BillingKeyNotIntegratedException();
++		String billingBirthDate = findBillingBirthDate(request.getUserId());
++		CardRegistered registeringCard = createRegisteringCard(request, cardProduct.getCardProductId());
++		BillingKeyIssueResponse issueResponse;
++		try {
++			issueResponse = issueBillingKey(registeringCard.getCardId(), request, billingBirthDate);
++		} catch (BillingKeyIssueFailedException exception) {
++			softDeleteRegisteringCard(registeringCard);
++			throw exception;
++		}
++
++		if (isPendingIssue(issueResponse)) {
++			softDeleteRegisteringCard(registeringCard);
++			throw new BillingKeyIssuePendingException();
++		}
++		if (!isSuccessfulIssue(issueResponse)) {
++			softDeleteRegisteringCard(registeringCard);
++			throw new BillingKeyIssueFailedException();
++		}
++
++		return activateRegisteredCard(request, cardProduct, registeringCard, issueResponse);
+ 	}
+ 
+-	// [be] 이준혁 260521 1602 | 사용자가 보낸 mockBin이 실제 카드번호 앞 6자리와 같은지 확인한다.
++	// [be] 이준혁 260521 1602 | 사용자가 보낸 mockBin과 실제 카드번호 앞 6자리가 같은지 확인한다.
+ 	private void validateMockBinMatchesCardNumber(String mockBin, String cardNumber) {
+ 		if (!cardNumber.startsWith(mockBin)) {
+ 			throw new BinMismatchException();
+@@ -73,12 +120,205 @@ public class CardRegistrationService {
+ 	// [be] 이준혁 260521 1602 | 같은 사용자가 같은 카드 상품을 이미 등록했는지 확인한다. DELETED 상태는 재등록 가능하므로 제외한다.
+ 	private void validateDuplicateRegistration(Long userId, Long cardProductId) {
+ 		boolean alreadyRegistered = cardRegisteredRepository.existsByUserIdAndCardProductIdAndStatusIn(
+-				userId,
+-				cardProductId,
+-				DUPLICATE_CHECK_STATUSES);
++			userId,
++			cardProductId,
++			DUPLICATE_CHECK_STATUSES
++		);
+ 
+ 		if (alreadyRegistered) {
+ 			throw new DuplicateCardRegistrationException();
+ 		}
+ 	}
++
++	private String findBillingBirthDate(Long userId) {
++		AuthUserInfoResponse response;
++		try {
++			response = authServiceClient.getUserInfo(userId);
++		} catch (FeignException.NotFound exception) {
++			throw new UserNotFoundException();
++		} catch (FeignException exception) {
++			throw new AuthServiceUnavailableException(exception);
++		}
++
++		if (response == null) {
++			throw new AuthServiceUnavailableException(
++				new IllegalStateException("auth-service user info response is required")
++			);
++		}
++		if (!USER_STATUS_ACTIVE.equals(response.status())) {
++			throw new UserNotActiveException();
++		}
++		return normalizeBirthDate(response.birthDate());
++	}
++
++	private String normalizeBirthDate(String birthDate) {
++		if (birthDate == null || birthDate.isBlank()) {
++			throw new InvalidUserBirthDateException();
++		}
++
++		String normalized = birthDate.trim();
++		if (normalized.matches("\\d{8}")) {
++			return normalized.substring(2);
++		}
++		if (normalized.matches("\\d{6}")) {
++			return normalized;
++		}
++		throw new InvalidUserBirthDateException();
++	}
++
++	private CardRegistered createRegisteringCard(CardRegisterRequest request, Long cardProductId) {
++		return Objects.requireNonNull(transactionTemplate.execute(status -> cardRegisteredRepository.save(
++			CardRegistered.registering(
++				request.getUserId(),
++				cardProductId,
++				request.normalizedCardAlias(),
++				request.getExpiryYm()
++			)
++		)));
++	}
++
++	private BillingKeyIssueResponse issueBillingKey(Long payCardId, CardRegisterRequest request, String birthDate) {
++		BillingKeyIssueRequest issueRequest = new BillingKeyIssueRequest(
++			payCardId,
++			request.getCardNumber(),
++			toBillingExpiryDate(request.getExpiryYm()),
++			request.getCvc(),
++			request.getCardPassword2(),
++			birthDate
++		);
++
++		try {
++			return billingKeyServiceClient.issue(issueRequest);
++		} catch (FeignException exception) {
++			if (!isUnknownIssueResult(exception.status())) {
++				throw new BillingKeyIssueFailedException();
++			}
++			return retryIssueBillingKeyOnce(issueRequest);
++		} catch (RuntimeException exception) {
++			throw new BillingKeyIssueUnknownException(exception);
++		}
++	}
++
++	private BillingKeyIssueResponse retryIssueBillingKeyOnce(BillingKeyIssueRequest issueRequest) {
++		try {
++			return billingKeyServiceClient.issue(issueRequest);
++		} catch (FeignException retryException) {
++			if (isUnknownIssueResult(retryException.status())) {
++				throw new BillingKeyIssueUnknownException(retryException);
++			}
++			throw new BillingKeyIssueFailedException();
++		} catch (RuntimeException retryException) {
++			throw new BillingKeyIssueUnknownException(retryException);
++		}
++	}
++
++	private boolean isUnknownIssueResult(int status) {
++		return status <= 0 || status >= 500;
++	}
++
++	private String toBillingExpiryDate(String expiryYm) {
++		return expiryYm.substring(2);
++	}
++
++	private boolean isPendingIssue(BillingKeyIssueResponse response) {
++		return response != null && BILLING_KEY_ISSUE_PENDING.equals(response.responseCode());
++	}
++
++	private boolean isSuccessfulIssue(BillingKeyIssueResponse response) {
++		return response != null
++			&& !isBlank(response.billingKey())
++			&& !isBlank(response.maskedNumber())
++			&& (
++				BILLING_KEY_ISSUE_SUCCESS.equals(response.responseCode())
++					|| BILLING_KEY_ISSUE_ACTIVE_ECHO.equals(response.responseCode())
++			);
++	}
++
++	private CardRegisterResponse activateRegisteredCard(
++		CardRegisterRequest request,
++		CardProduct cardProduct,
++		CardRegistered registeringCard,
++		BillingKeyIssueResponse issueResponse
++	) {
++		try {
++			CardRegistered activeCard = Objects.requireNonNull(transactionTemplate.execute(status -> {
++				boolean shouldBeDefault = shouldBeDefault(request);
++				if (shouldBeDefault) {
++					cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(
++						request.getUserId(),
++						CardStatus.ACTIVE
++					).ifPresent(currentDefault -> {
++						currentDefault.unsetDefault();
++						cardRegisteredRepository.save(currentDefault);
++					});
++				}
++				registeringCard.activate(issueResponse.billingKey(), issueResponse.maskedNumber(), shouldBeDefault);
++				return cardRegisteredRepository.save(registeringCard);
++			}));
++			return toRegisterResponse(activeCard, cardProduct);
++		} catch (RuntimeException exception) {
++			compensateBillingKey(registeringCard.getCardId(), issueResponse.billingKey(), exception);
++			trySoftDeleteAfterActivationFailure(registeringCard);
++			throw new CardRegistrationFailedException(exception);
++		}
++	}
++
++	private boolean shouldBeDefault(CardRegisterRequest request) {
++		return request.defaultRequested()
++			|| cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(
++				request.getUserId(),
++				CardStatus.ACTIVE
++			).isEmpty();
++	}
++
++	private void compensateBillingKey(Long payCardId, String billingKey, RuntimeException originalException) {
++		try {
++			BillingKeyDeleteResponse response = billingKeyServiceClient.delete(
++				new BillingKeyDeleteRequest(payCardId, billingKey)
++			);
++			if (response == null || !BILLING_KEY_DELETE_SUCCESS.equals(response.responseCode())) {
++				log.error("Billing key compensation returned non-success response. payCardId={}", payCardId);
++			}
++		} catch (RuntimeException compensationException) {
++			log.error("Billing key compensation failed. payCardId={}", payCardId, compensationException);
++			originalException.addSuppressed(compensationException);
++		}
++	}
++
++	private void softDeleteRegisteringCard(CardRegistered registeringCard) {
++		transactionTemplate.executeWithoutResult(status -> {
++			registeringCard.delete(LocalDateTime.now(clock));
++			cardRegisteredRepository.save(registeringCard);
++		});
++	}
++
++	private void trySoftDeleteAfterActivationFailure(CardRegistered registeringCard) {
++		try {
++			softDeleteRegisteringCard(registeringCard);
++		} catch (RuntimeException exception) {
++			log.error(
++				"Failed to soft delete registering card after activation failure. cardId={}",
++				registeringCard.getCardId(),
++				exception
++			);
++		}
++	}
++
++	private CardRegisterResponse toRegisterResponse(CardRegistered card, CardProduct product) {
++		return CardRegisterResponse.builder()
++			.cardId(card.getCardId())
++			.cardProductId(card.getCardProductId())
++			.cardCompany(product.getCardCompany())
++			.cardName(product.getCardName())
++			.maskedNumber(card.getMaskedNumber())
++			.cardAlias(card.getCardAlias())
++			.expiryYm(card.getExpiryYm())
++			.isDefault(card.isDefaultCard())
++			.status(card.getStatus())
++			.build();
++	}
++
++	private boolean isBlank(String value) {
++		return value == null || value.isBlank();
++	}
+ }
+diff --git a/src/main/resources/application.yml b/src/main/resources/application.yml
+index 1ccf8c2..2d12b03 100644
+--- a/src/main/resources/application.yml
++++ b/src/main/resources/application.yml
+@@ -18,3 +18,9 @@ spring:
+     hibernate:
+       ddl-auto: validate
+     show-sql: true
++
++auth:
++  base-url: ${AUTH_SERVICE_BASE_URL:http://localhost:8081}
++
++billing-key:
++  base-url: ${BILLING_KEY_SERVICE_BASE_URL:http://localhost:8092}
+diff --git a/src/test/java/com/erumpay/card/CardServiceApplicationTests.java b/src/test/java/com/erumpay/card/CardServiceApplicationTests.java
+index 44f714f..c729d7a 100644
+--- a/src/test/java/com/erumpay/card/CardServiceApplicationTests.java
++++ b/src/test/java/com/erumpay/card/CardServiceApplicationTests.java
+@@ -3,7 +3,13 @@ package com.erumpay.card;
+ import org.junit.jupiter.api.Test;
+ import org.springframework.boot.test.context.SpringBootTest;
+ 
+-@SpringBootTest
++@SpringBootTest(properties = {
++	"spring.datasource.url=jdbc:h2:mem:card_service_test;MODE=MySQL;DB_CLOSE_DELAY=-1",
++	"spring.datasource.driver-class-name=org.h2.Driver",
++	"spring.datasource.username=sa",
++	"spring.datasource.password=",
++	"spring.jpa.hibernate.ddl-auto=create-drop"
++})
+ class CardServiceApplicationTests {
+ 
+ 	@Test
+diff --git a/src/test/java/com/erumpay/card/service/CardRegistrationServiceTest.java b/src/test/java/com/erumpay/card/service/CardRegistrationServiceTest.java
+index e9046f7..7e2f274 100644
+--- a/src/test/java/com/erumpay/card/service/CardRegistrationServiceTest.java
++++ b/src/test/java/com/erumpay/card/service/CardRegistrationServiceTest.java
+@@ -4,21 +4,38 @@ import static org.assertj.core.api.Assertions.assertThat;
+ import static org.assertj.core.api.Assertions.assertThatThrownBy;
+ import static org.mockito.ArgumentMatchers.any;
+ import static org.mockito.ArgumentMatchers.eq;
++import static org.mockito.Mockito.lenient;
+ import static org.mockito.Mockito.mock;
+ import static org.mockito.Mockito.never;
++import static org.mockito.Mockito.times;
+ import static org.mockito.Mockito.verify;
+ import static org.mockito.Mockito.when;
+ 
++import com.erumpay.card.client.AuthServiceClient;
++import com.erumpay.card.client.BillingKeyServiceClient;
+ import com.erumpay.card.domain.entity.CardProduct;
++import com.erumpay.card.domain.entity.CardRegistered;
+ import com.erumpay.card.domain.enums.CardStatus;
+ import com.erumpay.card.dto.CardRegisterRequest;
+-import com.erumpay.card.exception.BillingKeyNotIntegratedException;
++import com.erumpay.card.dto.CardRegisterResponse;
++import com.erumpay.card.dto.client.AuthUserInfoResponse;
++import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
++import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
++import com.erumpay.card.dto.client.BillingKeyIssueRequest;
++import com.erumpay.card.dto.client.BillingKeyIssueResponse;
++import com.erumpay.card.exception.BillingKeyIssueFailedException;
++import com.erumpay.card.exception.BillingKeyIssuePendingException;
++import com.erumpay.card.exception.BillingKeyIssueUnknownException;
+ import com.erumpay.card.exception.BinMismatchException;
+ import com.erumpay.card.exception.CardProductNotFoundException;
++import com.erumpay.card.exception.CardRegistrationFailedException;
+ import com.erumpay.card.exception.DuplicateCardRegistrationException;
+ import com.erumpay.card.exception.InvalidExpiryYmException;
++import com.erumpay.card.exception.InvalidUserBirthDateException;
++import com.erumpay.card.exception.UserNotActiveException;
+ import com.erumpay.card.repository.CardProductRepository;
+ import com.erumpay.card.repository.CardRegisteredRepository;
++import feign.FeignException;
+ import java.time.Clock;
+ import java.time.Instant;
+ import java.time.ZoneId;
+@@ -30,6 +47,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
+ import org.mockito.ArgumentCaptor;
+ import org.mockito.Mock;
+ import org.mockito.junit.jupiter.MockitoExtension;
++import org.springframework.test.util.ReflectionTestUtils;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.TransactionDefinition;
++import org.springframework.transaction.TransactionStatus;
++import org.springframework.transaction.support.SimpleTransactionStatus;
++import org.springframework.transaction.support.TransactionTemplate;
+ 
+ @ExtendWith(MockitoExtension.class)
+ class CardRegistrationServiceTest {
+@@ -45,6 +68,12 @@ class CardRegistrationServiceTest {
+ 	@Mock
+ 	private CardRegisteredRepository cardRegisteredRepository;
+ 
++	@Mock
++	private AuthServiceClient authServiceClient;
++
++	@Mock
++	private BillingKeyServiceClient billingKeyServiceClient;
++
+ 	private CardRegistrationService cardRegistrationService;
+ 
+ 	@BeforeEach
+@@ -52,6 +81,9 @@ class CardRegistrationServiceTest {
+ 		cardRegistrationService = new CardRegistrationService(
+ 			cardProductRepository,
+ 			cardRegisteredRepository,
++			authServiceClient,
++			billingKeyServiceClient,
++			transactionTemplate(),
+ 			FIXED_CLOCK
+ 		);
+ 	}
+@@ -65,6 +97,7 @@ class CardRegistrationServiceTest {
+ 
+ 		verify(cardProductRepository, never()).findByMockBin(any());
+ 		verify(cardRegisteredRepository, never()).existsByUserIdAndCardProductIdAndStatusIn(any(), any(), any());
++		verify(authServiceClient, never()).getUserInfo(any());
+ 	}
+ 
+ 	@Test
+@@ -76,6 +109,7 @@ class CardRegistrationServiceTest {
+ 
+ 		verify(cardProductRepository, never()).findByMockBin(any());
+ 		verify(cardRegisteredRepository, never()).existsByUserIdAndCardProductIdAndStatusIn(any(), any(), any());
++		verify(authServiceClient, never()).getUserInfo(any());
+ 	}
+ 
+ 	@Test
+@@ -87,6 +121,7 @@ class CardRegistrationServiceTest {
+ 
+ 		verify(cardProductRepository, never()).findByMockBin(any());
+ 		verify(cardRegisteredRepository, never()).existsByUserIdAndCardProductIdAndStatusIn(any(), any(), any());
++		verify(authServiceClient, never()).getUserInfo(any());
+ 	}
+ 
+ 	@Test
+@@ -98,6 +133,7 @@ class CardRegistrationServiceTest {
+ 			.isInstanceOf(CardProductNotFoundException.class);
+ 
+ 		verify(cardRegisteredRepository, never()).existsByUserIdAndCardProductIdAndStatusIn(any(), any(), any());
++		verify(authServiceClient, never()).getUserInfo(any());
+ 	}
+ 
+ 	@Test
+@@ -111,20 +147,20 @@ class CardRegistrationServiceTest {
+ 
+ 		assertThatThrownBy(() -> cardRegistrationService.register(request))
+ 			.isInstanceOf(DuplicateCardRegistrationException.class);
++
++		verify(authServiceClient, never()).getUserInfo(any());
+ 	}
+ 
+ 	@Test
+-	void deletedCardProductRegistrationIsAllowedUntilBillingKeyIntegrationPoint() {
++	@SuppressWarnings("unchecked")
++	void duplicateCheckIncludesRegisteringStatus() {
+ 		CardRegisterRequest request = request("800000", "8000001234567890");
+ 		CardProduct cardProduct = cardProduct(10L);
++		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
+ 
+-		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
+-		when(cardRegisteredRepository.existsByUserIdAndCardProductIdAndStatusIn(eq(1L), eq(10L), any()))
+-			.thenReturn(false);
+-
+-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+-			.isInstanceOf(BillingKeyNotIntegratedException.class);
++		CardRegisterResponse response = cardRegistrationService.register(request);
+ 
++		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
+ 		ArgumentCaptor<Collection<CardStatus>> statusesCaptor = ArgumentCaptor.forClass(Collection.class);
+ 		verify(cardRegisteredRepository).existsByUserIdAndCardProductIdAndStatusIn(
+ 			eq(1L),
+@@ -140,16 +176,206 @@ class CardRegistrationServiceTest {
+ 	}
+ 
+ 	@Test
+-	void registerFailsWithNotImplementedAfterValidationBeforeBillingKeyIntegration() {
++	void registerCreatesRegisteringCardAndActivatesWithBillingKey() {
++		CardRegisterRequest request = request("800000", "8000001234567890");
++		CardProduct cardProduct = cardProduct(10L);
++		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
++
++		CardRegisterResponse response = cardRegistrationService.register(request);
++
++		assertThat(response.getCardId()).isEqualTo(100L);
++		assertThat(response.getCardProductId()).isEqualTo(10L);
++		assertThat(response.getCardCompany()).isEqualTo("LotteCard");
++		assertThat(response.getCardName()).isEqualTo("LOCA 365");
++		assertThat(response.getMaskedNumber()).isEqualTo("8000-****-****-1234");
++		assertThat(response.getCardAlias()).isEqualTo("생활비 카드");
++		assertThat(response.getExpiryYm()).isEqualTo("202812");
++		assertThat(response.getIsDefault()).isTrue();
++		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
++
++		ArgumentCaptor<BillingKeyIssueRequest> issueRequestCaptor = ArgumentCaptor.forClass(BillingKeyIssueRequest.class);
++		verify(billingKeyServiceClient).issue(issueRequestCaptor.capture());
++		BillingKeyIssueRequest issueRequest = issueRequestCaptor.getValue();
++		assertThat(issueRequest.payCardId()).isEqualTo(100L);
++		assertThat(issueRequest.expiryDate()).isEqualTo("2812");
++		assertThat(issueRequest.birthDate()).isEqualTo("900101");
++	}
++
++	@Test
++	void registerUsesSixDigitBirthDateAsIs() {
++		CardRegisterRequest request = request("800000", "8000001234567890");
++		CardProduct cardProduct = cardProduct(10L);
++		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
++		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "900101", "ACTIVE"));
++
++		cardRegistrationService.register(request);
++
++		ArgumentCaptor<BillingKeyIssueRequest> issueRequestCaptor = ArgumentCaptor.forClass(BillingKeyIssueRequest.class);
++		verify(billingKeyServiceClient).issue(issueRequestCaptor.capture());
++		assertThat(issueRequestCaptor.getValue().birthDate()).isEqualTo("900101");
++	}
++
++	@Test
++	void registerFailsBeforeCreatingRowWhenBirthDateIsInvalid() {
++		CardRegisterRequest request = request("800000", "8000001234567890");
++		CardProduct cardProduct = cardProduct(10L);
++
++		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
++		when(cardRegisteredRepository.existsByUserIdAndCardProductIdAndStatusIn(eq(1L), eq(10L), any()))
++			.thenReturn(false);
++		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "", "ACTIVE"));
++
++		assertThatThrownBy(() -> cardRegistrationService.register(request))
++			.isInstanceOf(InvalidUserBirthDateException.class);
++
++		verify(cardRegisteredRepository, never()).save(any());
++		verify(billingKeyServiceClient, never()).issue(any());
++	}
++
++	@Test
++	void registerFailsBeforeCreatingRowWhenUserIsNotActive() {
+ 		CardRegisterRequest request = request("800000", "8000001234567890");
+ 		CardProduct cardProduct = cardProduct(10L);
+ 
+ 		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
+ 		when(cardRegisteredRepository.existsByUserIdAndCardProductIdAndStatusIn(eq(1L), eq(10L), any()))
+ 			.thenReturn(false);
++		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "19900101", "WITHDRAWN"));
+ 
+ 		assertThatThrownBy(() -> cardRegistrationService.register(request))
+-			.isInstanceOf(BillingKeyNotIntegratedException.class);
++			.isInstanceOf(UserNotActiveException.class);
++
++		verify(cardRegisteredRepository, never()).save(any());
++		verify(billingKeyServiceClient, never()).issue(any());
++	}
++
++	@Test
++	void registerSoftDeletesRegisteringCardWhenBillingKeyIsPending() {
++		CardRegisterRequest request = request("800000", "8000001234567890");
++		CardProduct cardProduct = cardProduct(10L);
++		stubSuccessfulRegistration(cardProduct, issueResponse("105", null, null));
++
++		assertThatThrownBy(() -> cardRegistrationService.register(request))
++			.isInstanceOf(BillingKeyIssuePendingException.class);
++
++		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
++		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
++		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
++	}
++
++	@Test
++	void registerSoftDeletesRegisteringCardWhenBillingKeyIssueFailsExplicitly() {
++		CardRegisterRequest request = request("800000", "8000001234567890");
++		CardProduct cardProduct = cardProduct(10L);
++		stubSuccessfulRegistration(cardProduct, issueResponse("200", null, null));
++
++		assertThatThrownBy(() -> cardRegistrationService.register(request))
++			.isInstanceOf(BillingKeyIssueFailedException.class);
++
++		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
++		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
++		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
++	}
++
++	@Test
++	void registerSoftDeletesRegisteringCardWhenBillingKeyServiceReturnsDefiniteHttpFailure() {
++		CardRegisterRequest request = request("800000", "8000001234567890");
++		CardProduct cardProduct = cardProduct(10L);
++		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
++		FeignException badRequest = mock(FeignException.class);
++		when(badRequest.status()).thenReturn(400);
++		when(billingKeyServiceClient.issue(any())).thenThrow(badRequest);
++
++		assertThatThrownBy(() -> cardRegistrationService.register(request))
++			.isInstanceOf(BillingKeyIssueFailedException.class);
++
++		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
++		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
++		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
++	}
++
++	@Test
++	void registerPreservesRegisteringCardWhenBillingKeyIssueResultIsUnknown() {
++		CardRegisterRequest request = request("800000", "8000001234567890");
++		CardProduct cardProduct = cardProduct(10L);
++		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
++		FeignException unavailable = mock(FeignException.class);
++		when(unavailable.status()).thenReturn(503);
++		when(billingKeyServiceClient.issue(any()))
++			.thenThrow(unavailable)
++			.thenThrow(unavailable);
++
++		assertThatThrownBy(() -> cardRegistrationService.register(request))
++			.isInstanceOf(BillingKeyIssueUnknownException.class);
++
++		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
++		verify(cardRegisteredRepository).save(cardCaptor.capture());
++		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.REGISTERING);
++	}
++
++	@Test
++	void registerCompensatesBillingKeyWhenActivationFails() {
++		CardRegisterRequest request = request("800000", "8000001234567890");
++		CardProduct cardProduct = cardProduct(10L);
++
++		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
++		when(cardRegisteredRepository.existsByUserIdAndCardProductIdAndStatusIn(eq(1L), eq(10L), any()))
++			.thenReturn(false);
++		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "19900101", "ACTIVE"));
++		when(billingKeyServiceClient.issue(any()))
++			.thenReturn(issueResponse("100", "billing-key", "8000-****-****-1234"));
++		when(billingKeyServiceClient.delete(any()))
++			.thenReturn(new BillingKeyDeleteResponse(100L, "billing-key", "100", "OK"));
++		when(cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(1L, CardStatus.ACTIVE))
++			.thenReturn(Optional.empty());
++		when(cardRegisteredRepository.save(any(CardRegistered.class))).thenAnswer(invocation -> {
++			CardRegistered card = invocation.getArgument(0);
++			if (card.getCardId() == null) {
++				ReflectionTestUtils.setField(card, "cardId", 100L);
++			}
++			if (card.getStatus() == CardStatus.ACTIVE) {
++				throw new RuntimeException("activation failed");
++			}
++			return card;
++		});
++
++		assertThatThrownBy(() -> cardRegistrationService.register(request))
++			.isInstanceOf(CardRegistrationFailedException.class);
++
++		ArgumentCaptor<BillingKeyDeleteRequest> deleteRequestCaptor =
++			ArgumentCaptor.forClass(BillingKeyDeleteRequest.class);
++		verify(billingKeyServiceClient).delete(deleteRequestCaptor.capture());
++		assertThat(deleteRequestCaptor.getValue().payCardId()).isEqualTo(100L);
++		assertThat(deleteRequestCaptor.getValue().billingKey()).isEqualTo("billing-key");
++	}
++
++	@Test
++	void billingKeyClientDtosMaskSensitiveValuesInToString() {
++		assertThat(new BillingKeyIssueRequest(100L, "8000001234567890", "2812", "123", "12", "900101").toString())
++			.doesNotContain("8000001234567890", "2812", "123", "12", "900101");
++		assertThat(issueResponse("100", "billing-key", "8000-****-****-1234").toString())
++			.doesNotContain("billing-key");
++		assertThat(new BillingKeyDeleteRequest(100L, "billing-key").toString())
++			.doesNotContain("billing-key");
++		assertThat(new BillingKeyDeleteResponse(100L, "billing-key", "100", "OK").toString())
++			.doesNotContain("billing-key");
++	}
++
++	private void stubSuccessfulRegistration(CardProduct cardProduct, BillingKeyIssueResponse issueResponse) {
++		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
++		when(cardRegisteredRepository.existsByUserIdAndCardProductIdAndStatusIn(eq(1L), eq(10L), any()))
++			.thenReturn(false);
++		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "19900101", "ACTIVE"));
++		when(cardRegisteredRepository.save(any(CardRegistered.class))).thenAnswer(invocation -> {
++			CardRegistered card = invocation.getArgument(0);
++			if (card.getCardId() == null) {
++				ReflectionTestUtils.setField(card, "cardId", 100L);
++			}
++			return card;
++		});
++		lenient().when(cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(1L, CardStatus.ACTIVE))
++			.thenReturn(Optional.empty());
++		lenient().when(billingKeyServiceClient.issue(any())).thenReturn(issueResponse);
+ 	}
+ 
+ 	private CardRegisterRequest request(String mockBin, String cardNumber) {
+@@ -172,6 +398,29 @@ class CardRegistrationServiceTest {
+ 	private CardProduct cardProduct(Long cardProductId) {
+ 		CardProduct cardProduct = mock(CardProduct.class);
+ 		when(cardProduct.getCardProductId()).thenReturn(cardProductId);
++		lenient().when(cardProduct.getCardCompany()).thenReturn("LotteCard");
++		lenient().when(cardProduct.getCardName()).thenReturn("LOCA 365");
+ 		return cardProduct;
+ 	}
++
++	private BillingKeyIssueResponse issueResponse(String responseCode, String billingKey, String maskedNumber) {
++		return new BillingKeyIssueResponse(100L, billingKey, maskedNumber, "LOTTE", responseCode, "OK");
++	}
++
++	private TransactionTemplate transactionTemplate() {
++		return new TransactionTemplate(new PlatformTransactionManager() {
++			@Override
++			public TransactionStatus getTransaction(TransactionDefinition definition) {
++				return new SimpleTransactionStatus();
++			}
++
++			@Override
++			public void commit(TransactionStatus status) {
++			}
++
++			@Override
++			public void rollback(TransactionStatus status) {
++			}
++		});
++	}
+ }

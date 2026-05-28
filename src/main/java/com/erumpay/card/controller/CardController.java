@@ -6,6 +6,7 @@ import com.erumpay.card.dto.CardBinValidateResponse;
 import com.erumpay.card.dto.CardBenefitResponse;
 import com.erumpay.card.dto.CardPerformanceResponse;
 import com.erumpay.card.dto.CardRegisterRequest;
+import com.erumpay.card.dto.CardRegisterResponse;
 import com.erumpay.card.dto.CardResponse;
 import com.erumpay.card.dto.PaymentAvailabilityResponse;
 import com.erumpay.card.service.CardBinValidationService;
@@ -15,6 +16,7 @@ import com.erumpay.card.service.CardRegistrationService;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,9 +39,10 @@ public class CardController {
 	private final CardPerformanceBenefitService cardPerformanceBenefitService;
 
 	@PostMapping
-	public ResponseEntity<Void> register(@Valid @RequestBody CardRegisterRequest request) {
-		cardRegistrationService.register(request);
-		return ResponseEntity.noContent().build();
+	public ResponseEntity<CardRegisterResponse> register(@Valid @RequestBody CardRegisterRequest request) {
+		return ResponseEntity
+			.status(HttpStatus.CREATED)
+			.body(cardRegistrationService.register(request));
 	}
 
 	@PostMapping("/bin/validate")
