@@ -244,6 +244,7 @@ public class CardRegistrationService {
 					currentDefault.ifPresent(card -> {
 						card.unsetDefault();
 						cardRegisteredRepository.save(card);
+						cardRegisteredRepository.flush();
 					});
 				}
 				registeringCard.activate(issueResponse.billingKey(), issueResponse.maskedNumber(), shouldBeDefault);
