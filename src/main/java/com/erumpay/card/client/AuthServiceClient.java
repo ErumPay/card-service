@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 @FeignClient(name = "auth-service", url = "${auth.base-url}")
 public interface AuthServiceClient {
 
-	// auth-service 현재 구현은 프로젝트 표준 /internal/v1이 아니라 /api/v1/internal 경로를 사용한다.
-	@GetMapping("/api/v1/internal/users/{userId}")
+	// auth-service 내부 사용자 조회 API에서 카드 등록용 생년월일과 사용자 상태를 조회한다.
+	@GetMapping("/internal/v1/users/{userId}")
 	AuthUserInfoResponse getUserInfo(@PathVariable("userId") Long userId);
 }
