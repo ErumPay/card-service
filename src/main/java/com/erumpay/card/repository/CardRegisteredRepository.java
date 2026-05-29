@@ -21,7 +21,7 @@ public interface CardRegisteredRepository extends JpaRepository<CardRegistered, 
 			Long userId,
 			Collection<CardStatus> statuses);
 
-	List<CardRegistered> findByUserIdAndStatusNot(Long userId, CardStatus status);
+	List<CardRegistered> findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(Long userId, CardStatus status);
 
 	Optional<CardRegistered> findByCardIdAndUserId(Long cardId, Long userId);
 
