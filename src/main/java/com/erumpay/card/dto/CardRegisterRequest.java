@@ -20,10 +20,6 @@ public class CardRegisterRequest {
 	@NotNull(message = "회원 식별자는 필수입니다.")
 	private Long userId;
 
-	@NotBlank(message = "Mock BIN은 필수입니다.")
-	@Pattern(regexp = "\\d{6}", message = "Mock BIN 형식 오류")
-	private String mockBin;
-
 	@ToString.Exclude
 	@NotBlank(message = "카드번호는 필수입니다.")
 	@Pattern(regexp = "\\d{16}", message = "카드번호 형식 오류")
@@ -47,6 +43,13 @@ public class CardRegisterRequest {
 	private String cardAlias;
 
 	private Boolean isDefault;
+
+	public String mockBin() {
+		if (cardNumber == null || cardNumber.length() < 6) {
+			throw new IllegalArgumentException("cardNumber is missing or too short to extract mockBin.");
+		}
+		return cardNumber.substring(0, 6);
+	}
 
 	public String normalizedCardAlias() {
 		if (cardAlias == null) {

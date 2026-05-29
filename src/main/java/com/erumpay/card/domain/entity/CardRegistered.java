@@ -31,10 +31,10 @@ public class CardRegistered {
 	@Column(name = "card_product_id", nullable = false)
 	private Long cardProductId;
 
-	@Column(name = "encrypted_billing_key", nullable = false, length = 255)
+	@Column(name = "encrypted_billing_key", length = 255)
 	private String encryptedBillingKey;
 
-	@Column(name = "masked_number", nullable = false, length = 20)
+	@Column(name = "masked_number", length = 20)
 	private String maskedNumber;
 
 	@Column(name = "card_alias", length = 50)
@@ -59,6 +59,22 @@ public class CardRegistered {
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
 
+	public static CardRegistered registering(
+		Long userId,
+		Long cardProductId,
+		String cardAlias,
+		String expiryYm
+	) {
+		CardRegistered card = new CardRegistered();
+		card.userId = userId;
+		card.cardProductId = cardProductId;
+		card.cardAlias = cardAlias;
+		card.expiryYm = expiryYm;
+		card.defaultCard = false;
+		card.status = CardStatus.REGISTERING;
+		return card;
+	}
+
 	public void updateAlias(String cardAlias) {
 		this.cardAlias = cardAlias;
 	}
@@ -77,8 +93,20 @@ public class CardRegistered {
 		this.defaultCard = false;
 	}
 
+	public void activate(String billingKey, String maskedNumber, boolean defaultCard) {
+		this.encryptedBillingKey = billingKey;
+		this.maskedNumber = maskedNumber;
+		this.defaultCard = defaultCard;
+		this.status = CardStatus.ACTIVE;
+		this.deletedAt = null;
+	}
+
 	public boolean isDeleted() {
 		return status == CardStatus.DELETED;
+	}
+
+	public boolean isRegistering() {
+		return status == CardStatus.REGISTERING;
 	}
 
 	public boolean isActive() {

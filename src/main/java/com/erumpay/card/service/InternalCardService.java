@@ -1,5 +1,6 @@
 package com.erumpay.card.service;
 
+import com.erumpay.card.client.BillingKeyServiceClient;
 import com.erumpay.card.domain.entity.CardBenefit;
 import com.erumpay.card.domain.entity.CardBenefitBrand;
 import com.erumpay.card.domain.entity.CardBenefitTier;
@@ -17,7 +18,11 @@ import com.erumpay.card.dto.InternalRecommendationSourceResponse.InternalBenefit
 import com.erumpay.card.dto.InternalRecommendationSourceResponse.InternalRecommendationBenefitResponse;
 import com.erumpay.card.dto.InternalRecommendationSourceResponse.InternalRecommendationBenefitTierResponse;
 import com.erumpay.card.dto.InternalRecommendationSourceResponse.InternalRecommendationCardResponse;
+import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
+import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
+import com.erumpay.card.exception.BillingKeyDeactivationFailedException;
 import com.erumpay.card.exception.BillingKeyNotFoundException;
+import com.erumpay.card.exception.BillingKeyServiceUnavailableException;
 import com.erumpay.card.exception.CardNotActiveException;
 import com.erumpay.card.exception.CardNotFoundException;
 import com.erumpay.card.repository.CardBenefitBrandRepository;
@@ -37,13 +42,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class InternalCardService {
+
+	private static final String BILLING_KEY_DELETE_SUCCESS = "100";
+	private static final String BILLING_KEY_NOT_FOUND_REASON = "BILLING_KEY_NOT_FOUND";
+	private static final int HTTP_NOT_FOUND = 404;
 
 	private final CardRegisteredRepository cardRegisteredRepository;
 	private final CardProductRepository cardProductRepository;
@@ -52,13 +65,18 @@ public class InternalCardService {
 	private final CardBenefitBrandRepository cardBenefitBrandRepository;
 	private final CardBenefitTierRepository cardBenefitTierRepository;
 	private final CardBenefitUsageRepository cardBenefitUsageRepository;
+	private final BillingKeyServiceClient billingKeyServiceClient;
 	private final Clock clock;
 	private final YearMonthValidator yearMonthValidator;
+	private final TransactionTemplate transactionTemplate;
 
 	// [be] 이준혁 260522 0902 | 결제 승인 전 사용할 billing key를 userId와 cardId 소유자 검증 후 반환한다.
 	@Transactional(readOnly = true)
 	public InternalBillingKeyResponse getBillingKey(Long userId, Long cardId) {
 		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
+		if (card.isRegistering()) {
+			throw new CardNotFoundException();
+		}
 		if (!card.isActive()) {
 			throw new CardNotActiveException();
 		}
@@ -135,16 +153,85 @@ public class InternalCardService {
 	}
 
 	// [be] 이준혁 260522 0902 | 회원탈퇴 시 사용자의 비삭제 카드를 모두 DELETED로 바꾸고 주카드 대체 지정은 수행하지 않는다.
-	@Transactional
 	public InternalDeactivateCardsResponse deactivateAll(Long userId) {
-		List<CardRegistered> cards = cardRegisteredRepository.findByUserIdAndStatusNot(userId, CardStatus.DELETED);
-		LocalDateTime deletedAt = LocalDateTime.now(clock);
-		cards.forEach(card -> card.delete(deletedAt));
+		List<CardRegistered> cards = cardRegisteredRepository
+			.findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(userId, CardStatus.DELETED);
+		int deactivatedCount = 0;
+		for (CardRegistered card : cards) {
+			if (deactivateCardForWithdraw(userId, card)) {
+				deactivatedCount++;
+			}
+		}
 
 		return InternalDeactivateCardsResponse.builder()
 			.userId(userId)
-			.deactivatedCount(cards.size())
+			.deactivatedCount(deactivatedCount)
 			.build();
+	}
+
+	private boolean deactivateCardForWithdraw(Long userId, CardRegistered card) {
+		if (card.isDeleted()) {
+			return false;
+		}
+		if (card.isRegistering()) {
+			softDeleteCardForWithdraw(card);
+			return true;
+		}
+		if (!card.hasBillingKey()) {
+			log.error(
+				"Live card has no billing key during deactivate-all. userId={}, cardId={}, status={}, reason={}",
+				userId,
+				card.getCardId(),
+				card.getStatus(),
+				BILLING_KEY_NOT_FOUND_REASON
+			);
+			softDeleteCardForWithdraw(card);
+			return true;
+		}
+
+		deactivateBillingKeyForWithdraw(card);
+		softDeleteCardForWithdraw(card);
+		return true;
+	}
+
+	private void deactivateBillingKeyForWithdraw(CardRegistered card) {
+		BillingKeyDeleteResponse response;
+		try {
+			response = billingKeyServiceClient.delete(
+				new BillingKeyDeleteRequest(card.getCardId(), card.getEncryptedBillingKey())
+			);
+		} catch (FeignException exception) {
+			if (exception.status() == HTTP_NOT_FOUND) {
+				log.warn(
+					"Billing key already inactive during deactivate-all. userId={}, cardId={}, status={}",
+					card.getUserId(),
+					card.getCardId(),
+					card.getStatus()
+				);
+				return;
+			}
+			if (isBillingKeyServiceUnavailable(exception.status())) {
+				throw new BillingKeyServiceUnavailableException(exception);
+			}
+			throw new BillingKeyDeactivationFailedException(exception);
+		} catch (RuntimeException exception) {
+			throw new BillingKeyServiceUnavailableException(exception);
+		}
+
+		if (response == null || !BILLING_KEY_DELETE_SUCCESS.equals(response.responseCode())) {
+			throw new BillingKeyDeactivationFailedException();
+		}
+	}
+
+	private boolean isBillingKeyServiceUnavailable(int status) {
+		return status <= 0 || status >= 500;
+	}
+
+	private void softDeleteCardForWithdraw(CardRegistered card) {
+		transactionTemplate.executeWithoutResult(status -> {
+			card.delete(LocalDateTime.now(clock));
+			cardRegisteredRepository.save(card);
+		});
 	}
 
 	private CardRegistered findOwnedNonDeletedCard(Long userId, Long cardId) {

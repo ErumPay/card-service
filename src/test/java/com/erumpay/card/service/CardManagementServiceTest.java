@@ -11,28 +11,42 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.erumpay.card.client.BillingKeyServiceClient;
 import com.erumpay.card.domain.entity.CardProduct;
 import com.erumpay.card.domain.entity.CardRegistered;
 import com.erumpay.card.domain.enums.CardStatus;
 import com.erumpay.card.dto.CardAliasUpdateRequest;
 import com.erumpay.card.dto.CardResponse;
 import com.erumpay.card.dto.PaymentAvailabilityResponse;
+import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
+import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
+import com.erumpay.card.exception.BillingKeyDeactivationFailedException;
+import com.erumpay.card.exception.BillingKeyNotFoundException;
+import com.erumpay.card.exception.BillingKeyServiceUnavailableException;
 import com.erumpay.card.exception.CardNotActiveException;
 import com.erumpay.card.exception.CardNotFoundException;
 import com.erumpay.card.repository.CardProductRepository;
 import com.erumpay.card.repository.CardRegisteredRepository;
+import feign.FeignException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class CardManagementServiceTest {
@@ -48,6 +62,9 @@ class CardManagementServiceTest {
 	@Mock
 	private CardProductRepository cardProductRepository;
 
+	@Mock
+	private BillingKeyServiceClient billingKeyServiceClient;
+
 	private CardManagementService cardManagementService;
 
 	@BeforeEach
@@ -55,6 +72,8 @@ class CardManagementServiceTest {
 		cardManagementService = new CardManagementService(
 			cardRegisteredRepository,
 			cardProductRepository,
+			billingKeyServiceClient,
+			transactionTemplate(),
 			FIXED_CLOCK
 		);
 	}
@@ -64,10 +83,8 @@ class CardManagementServiceTest {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, true, "billing-key");
 		CardProduct product = product(100L, "롯데카드", "LOCA 365 카드");
 
-		when(cardRegisteredRepository.findByUserIdAndStatusNotOrderByDefaultCardDescCreatedAtDesc(
-			1L,
-			CardStatus.DELETED
-		)).thenReturn(List.of(card));
+		when(cardRegisteredRepository.findByUserIdAndStatusInOrderByDefaultCardDescCreatedAtDesc(eq(1L), any()))
+			.thenReturn(List.of(card));
 		when(cardProductRepository.findAllById(any())).thenReturn(List.of(product));
 
 		List<CardResponse> responses = cardManagementService.getCards(1L);
@@ -77,11 +94,15 @@ class CardManagementServiceTest {
 		assertThat(responses.getFirst().getCardCompany()).isEqualTo("롯데카드");
 		assertThat(responses.getFirst().getCardName()).isEqualTo("LOCA 365 카드");
 		assertThat(responses.getFirst().getIsDefault()).isTrue();
+		ArgumentCaptor<Collection<CardStatus>> statusesCaptor = ArgumentCaptor.forClass(Collection.class);
+		verify(cardRegisteredRepository)
+			.findByUserIdAndStatusInOrderByDefaultCardDescCreatedAtDesc(eq(1L), statusesCaptor.capture());
+		assertVisibleStatuses(statusesCaptor.getValue());
 	}
 
 	@Test
 	void getCardFailsWhenCardDoesNotBelongToUser() {
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> cardManagementService.getCard(1L, 10L))
@@ -91,7 +112,7 @@ class CardManagementServiceTest {
 	@Test
 	void updateAliasNormalizesBlankAliasToNull() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "billing-key");
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 
 		cardManagementService.updateAlias(1L, 10L, new CardAliasUpdateRequest("   "));
@@ -102,7 +123,7 @@ class CardManagementServiceTest {
 	@Test
 	void updateAliasNormalizesTrailingSpaceBeforeApplying() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "billing-key");
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 
 		CardAliasUpdateRequest request = new CardAliasUpdateRequest();
@@ -116,7 +137,7 @@ class CardManagementServiceTest {
 	@Test
 	void setDefaultFailsWhenTargetCardIsNotActive() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.PAUSED, false, "billing-key");
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 
 		assertThatThrownBy(() -> cardManagementService.setDefault(1L, 10L))
@@ -130,7 +151,7 @@ class CardManagementServiceTest {
 		CardRegistered currentDefault = card(9L, 1L, 99L, CardStatus.ACTIVE, true, "billing-key");
 		CardRegistered target = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "billing-key");
 
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(target));
 		when(cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(1L, CardStatus.ACTIVE))
 			.thenReturn(Optional.of(currentDefault));
@@ -148,6 +169,7 @@ class CardManagementServiceTest {
 		CardRegistered replacement = card(11L, 1L, 101L, CardStatus.ACTIVE, false, "billing-key");
 
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		when(billingKeyServiceClient.delete(any())).thenReturn(successDeleteResponse(10L, "billing-key"));
 		when(cardRegisteredRepository.findFirstByUserIdAndStatusAndCardIdNotOrderByCreatedAtAscCardIdAsc(
 			1L,
 			CardStatus.ACTIVE,
@@ -156,9 +178,28 @@ class CardManagementServiceTest {
 
 		cardManagementService.deleteCard(1L, 10L);
 
-		InOrder inOrder = inOrder(target, replacement);
+		InOrder inOrder = inOrder(billingKeyServiceClient, target, replacement);
+		ArgumentCaptor<BillingKeyDeleteRequest> requestCaptor = ArgumentCaptor.forClass(BillingKeyDeleteRequest.class);
+		inOrder.verify(billingKeyServiceClient).delete(requestCaptor.capture());
+		assertThat(requestCaptor.getValue().payCardId()).isEqualTo(10L);
+		assertThat(requestCaptor.getValue().billingKey()).isEqualTo("billing-key");
 		inOrder.verify(target).delete(any(LocalDateTime.class));
 		inOrder.verify(replacement).markDefault();
+	}
+
+	@Test
+	void deletePausedCardDeactivatesBillingKeyAndSoftDeletes() {
+		CardRegistered target = card(10L, 1L, 100L, CardStatus.PAUSED, false, "billing-key");
+
+		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		when(billingKeyServiceClient.delete(any())).thenReturn(successDeleteResponse(10L, "billing-key"));
+
+		cardManagementService.deleteCard(1L, 10L);
+
+		verify(billingKeyServiceClient).delete(any());
+		verify(target).delete(any(LocalDateTime.class));
+		verify(cardRegisteredRepository, never())
+			.findFirstByUserIdAndStatusAndCardIdNotOrderByCreatedAtAscCardIdAsc(any(), any(), any());
 	}
 
 	@Test
@@ -168,14 +209,82 @@ class CardManagementServiceTest {
 
 		cardManagementService.deleteCard(1L, 10L);
 
+		verify(billingKeyServiceClient, never()).delete(any());
 		verify(target, never()).delete(any());
 		verify(cardRegisteredRepository, never())
 			.findFirstByUserIdAndStatusAndCardIdNotOrderByCreatedAtAscCardIdAsc(any(), any(), any());
 	}
 
 	@Test
+	void deleteRegisteringCardFailsAsNotFound() {
+		CardRegistered target = card(10L, 1L, 100L, CardStatus.REGISTERING, false, null);
+		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+
+		assertThatThrownBy(() -> cardManagementService.deleteCard(1L, 10L))
+			.isInstanceOf(CardNotFoundException.class);
+
+		verify(billingKeyServiceClient, never()).delete(any());
+		verify(target, never()).delete(any());
+	}
+
+	@Test
+	void deleteCardFailsWhenBillingKeyDoesNotExist() {
+		CardRegistered target = card(10L, 1L, 100L, CardStatus.ACTIVE, false, null);
+		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+
+		assertThatThrownBy(() -> cardManagementService.deleteCard(1L, 10L))
+			.isInstanceOf(BillingKeyNotFoundException.class);
+
+		verify(billingKeyServiceClient, never()).delete(any());
+		verify(target, never()).delete(any());
+	}
+
+	@Test
+	void deleteCardFailsWithoutSoftDeleteWhenBillingKeyDeleteReturnsNonSuccess() {
+		CardRegistered target = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "billing-key");
+		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		when(billingKeyServiceClient.delete(any()))
+			.thenReturn(new BillingKeyDeleteResponse(10L, "billing-key", "101", "not found"));
+
+		assertThatThrownBy(() -> cardManagementService.deleteCard(1L, 10L))
+			.isInstanceOf(BillingKeyDeactivationFailedException.class);
+
+		verify(target, never()).delete(any());
+	}
+
+	@Test
+	void deleteCardFailsWithoutSoftDeleteWhenBillingKeyDeleteReturnsClientError() {
+		CardRegistered target = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "billing-key");
+		FeignException notFound = mock(FeignException.class);
+
+		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		when(notFound.status()).thenReturn(404);
+		when(billingKeyServiceClient.delete(any())).thenThrow(notFound);
+
+		assertThatThrownBy(() -> cardManagementService.deleteCard(1L, 10L))
+			.isInstanceOf(BillingKeyDeactivationFailedException.class);
+
+		verify(target, never()).delete(any());
+	}
+
+	@Test
+	void deleteCardFailsWithoutSoftDeleteWhenBillingKeyServiceUnavailable() {
+		CardRegistered target = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "billing-key");
+		FeignException unavailable = mock(FeignException.class);
+
+		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		when(unavailable.status()).thenReturn(503);
+		when(billingKeyServiceClient.delete(any())).thenThrow(unavailable);
+
+		assertThatThrownBy(() -> cardManagementService.deleteCard(1L, 10L))
+			.isInstanceOf(BillingKeyServiceUnavailableException.class);
+
+		verify(target, never()).delete(any());
+	}
+
+	@Test
 	void checkUserPaymentAvailabilityReturnsCardNotFoundWhenUserHasNoCards() {
-		when(cardRegisteredRepository.existsByUserIdAndStatusNot(1L, CardStatus.DELETED)).thenReturn(false);
+		when(cardRegisteredRepository.existsByUserIdAndStatusIn(eq(1L), any())).thenReturn(false);
 
 		PaymentAvailabilityResponse response = cardManagementService.checkUserPaymentAvailability(1L);
 
@@ -185,7 +294,7 @@ class CardManagementServiceTest {
 
 	@Test
 	void checkUserPaymentAvailabilityReturnsCardNotActiveWhenUserHasNoActiveCards() {
-		when(cardRegisteredRepository.existsByUserIdAndStatusNot(1L, CardStatus.DELETED)).thenReturn(true);
+		when(cardRegisteredRepository.existsByUserIdAndStatusIn(eq(1L), any())).thenReturn(true);
 		when(cardRegisteredRepository.existsByUserIdAndStatus(1L, CardStatus.ACTIVE)).thenReturn(false);
 
 		PaymentAvailabilityResponse response = cardManagementService.checkUserPaymentAvailability(1L);
@@ -196,7 +305,7 @@ class CardManagementServiceTest {
 
 	@Test
 	void checkUserPaymentAvailabilityReturnsBillingKeyNotFoundWhenActiveCardHasNoBillingKey() {
-		when(cardRegisteredRepository.existsByUserIdAndStatusNot(1L, CardStatus.DELETED)).thenReturn(true);
+		when(cardRegisteredRepository.existsByUserIdAndStatusIn(eq(1L), any())).thenReturn(true);
 		when(cardRegisteredRepository.existsByUserIdAndStatus(1L, CardStatus.ACTIVE)).thenReturn(true);
 		when(cardRegisteredRepository.existsPaymentAvailableCard(1L, CardStatus.ACTIVE)).thenReturn(false);
 
@@ -208,7 +317,7 @@ class CardManagementServiceTest {
 
 	@Test
 	void checkUserPaymentAvailabilityReturnsAvailableWhenActiveCardHasBillingKey() {
-		when(cardRegisteredRepository.existsByUserIdAndStatusNot(1L, CardStatus.DELETED)).thenReturn(true);
+		when(cardRegisteredRepository.existsByUserIdAndStatusIn(eq(1L), any())).thenReturn(true);
 		when(cardRegisteredRepository.existsByUserIdAndStatus(1L, CardStatus.ACTIVE)).thenReturn(true);
 		when(cardRegisteredRepository.existsPaymentAvailableCard(1L, CardStatus.ACTIVE)).thenReturn(true);
 
@@ -220,7 +329,8 @@ class CardManagementServiceTest {
 
 	@Test
 	void checkCardPaymentAvailabilityFailsWhenCardDoesNotBelongToUser() {
-		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.empty());
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
+			.thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> cardManagementService.checkCardPaymentAvailability(1L, 10L))
 			.isInstanceOf(CardNotFoundException.class);
@@ -229,7 +339,8 @@ class CardManagementServiceTest {
 	@Test
 	void checkCardPaymentAvailabilityReturnsCardNotActiveWhenCardIsNotActive() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.EXPIRED, false, "billing-key");
-		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(card));
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
+			.thenReturn(Optional.of(card));
 
 		PaymentAvailabilityResponse response = cardManagementService.checkCardPaymentAvailability(1L, 10L);
 
@@ -240,7 +351,8 @@ class CardManagementServiceTest {
 	@Test
 	void checkCardPaymentAvailabilityReturnsBillingKeyNotFoundWhenCardHasNoBillingKey() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, null);
-		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(card));
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
+			.thenReturn(Optional.of(card));
 
 		PaymentAvailabilityResponse response = cardManagementService.checkCardPaymentAvailability(1L, 10L);
 
@@ -251,12 +363,25 @@ class CardManagementServiceTest {
 	@Test
 	void checkCardPaymentAvailabilityReturnsAvailableWhenCardIsActiveAndHasBillingKey() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "billing-key");
-		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(card));
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
+			.thenReturn(Optional.of(card));
 
 		PaymentAvailabilityResponse response = cardManagementService.checkCardPaymentAvailability(1L, 10L);
 
 		assertThat(response.isAvailable()).isTrue();
 		assertThat(response.getReason()).isNull();
+		ArgumentCaptor<Collection<CardStatus>> statusesCaptor = ArgumentCaptor.forClass(Collection.class);
+		verify(cardRegisteredRepository)
+			.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), statusesCaptor.capture());
+		assertVisibleStatuses(statusesCaptor.getValue());
+	}
+
+	private void assertVisibleStatuses(Collection<CardStatus> statuses) {
+		assertThat(statuses).containsExactlyInAnyOrder(
+			CardStatus.ACTIVE,
+			CardStatus.PAUSED,
+			CardStatus.EXPIRED
+		);
 	}
 
 	private CardRegistered card(
@@ -277,7 +402,9 @@ class CardManagementServiceTest {
 		lenient().when(card.isDefaultCard()).thenReturn(defaultCard);
 		lenient().when(card.getStatus()).thenReturn(status);
 		lenient().when(card.isDeleted()).thenReturn(status == CardStatus.DELETED);
+		lenient().when(card.isRegistering()).thenReturn(status == CardStatus.REGISTERING);
 		lenient().when(card.isActive()).thenReturn(status == CardStatus.ACTIVE);
+		lenient().when(card.getEncryptedBillingKey()).thenReturn(billingKey);
 		lenient().when(card.hasBillingKey()).thenReturn(billingKey != null && !billingKey.isBlank());
 		return card;
 	}
@@ -288,5 +415,26 @@ class CardManagementServiceTest {
 		lenient().when(product.getCardCompany()).thenReturn(cardCompany);
 		lenient().when(product.getCardName()).thenReturn(cardName);
 		return product;
+	}
+
+	private BillingKeyDeleteResponse successDeleteResponse(Long payCardId, String billingKey) {
+		return new BillingKeyDeleteResponse(payCardId, billingKey, "100", "OK");
+	}
+
+	private TransactionTemplate transactionTemplate() {
+		return new TransactionTemplate(new PlatformTransactionManager() {
+			@Override
+			public TransactionStatus getTransaction(TransactionDefinition definition) {
+				return new SimpleTransactionStatus();
+			}
+
+			@Override
+			public void commit(TransactionStatus status) {
+			}
+
+			@Override
+			public void rollback(TransactionStatus status) {
+			}
+		});
 	}
 }

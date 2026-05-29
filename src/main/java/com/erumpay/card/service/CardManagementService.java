@@ -1,15 +1,22 @@
 package com.erumpay.card.service;
 
+import com.erumpay.card.client.BillingKeyServiceClient;
 import com.erumpay.card.domain.entity.CardProduct;
 import com.erumpay.card.domain.entity.CardRegistered;
 import com.erumpay.card.domain.enums.CardStatus;
 import com.erumpay.card.dto.CardAliasUpdateRequest;
 import com.erumpay.card.dto.CardResponse;
 import com.erumpay.card.dto.PaymentAvailabilityResponse;
+import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
+import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
+import com.erumpay.card.exception.BillingKeyDeactivationFailedException;
+import com.erumpay.card.exception.BillingKeyNotFoundException;
+import com.erumpay.card.exception.BillingKeyServiceUnavailableException;
 import com.erumpay.card.exception.CardNotActiveException;
 import com.erumpay.card.exception.CardNotFoundException;
 import com.erumpay.card.repository.CardProductRepository;
 import com.erumpay.card.repository.CardRegisteredRepository;
+import feign.FeignException;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -20,6 +27,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -28,16 +36,24 @@ public class CardManagementService {
 	private static final String CARD_NOT_FOUND = "CARD_NOT_FOUND";
 	private static final String CARD_NOT_ACTIVE = "CARD_NOT_ACTIVE";
 	private static final String BILLING_KEY_NOT_FOUND = "BILLING_KEY_NOT_FOUND";
+	private static final String BILLING_KEY_DELETE_SUCCESS = "100";
+	private static final List<CardStatus> VISIBLE_CARD_STATUSES = List.of(
+		CardStatus.ACTIVE,
+		CardStatus.PAUSED,
+		CardStatus.EXPIRED
+	);
 
 	private final CardRegisteredRepository cardRegisteredRepository;
 	private final CardProductRepository cardProductRepository;
+	private final BillingKeyServiceClient billingKeyServiceClient;
+	private final TransactionTemplate transactionTemplate;
 	private final Clock clock;
 
 	// [be] 이준혁 260521 1602 | 삭제되지 않은 사용자 카드 목록을 조회하고 카드 상품 정보와 합쳐 응답 DTO로 변환한다.
 	@Transactional(readOnly = true)
 	public List<CardResponse> getCards(Long userId) {
 		List<CardRegistered> cards = cardRegisteredRepository
-			.findByUserIdAndStatusNotOrderByDefaultCardDescCreatedAtDesc(userId, CardStatus.DELETED);
+			.findByUserIdAndStatusInOrderByDefaultCardDescCreatedAtDesc(userId, VISIBLE_CARD_STATUSES);
 		Map<Long, CardProduct> products = findProductsById(cards.stream()
 			.map(CardRegistered::getCardProductId)
 			.toList());
@@ -50,7 +66,7 @@ public class CardManagementService {
 	// [be] 이준혁 260521 1602 | userId와 cardId가 함께 맞는 삭제되지 않은 카드만 상세 조회한다.
 	@Transactional(readOnly = true)
 	public CardResponse getCard(Long userId, Long cardId) {
-		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
+		CardRegistered card = findOwnedVisibleCard(userId, cardId);
 		CardProduct product = findProductById(card.getCardProductId());
 		return toResponse(card, product);
 	}
@@ -58,14 +74,14 @@ public class CardManagementService {
 	// [be] 이준혁 260521 1602 | 카드 별칭을 수정한다. 공백만 있는 별칭은 null로 바꿔 별칭 제거로 처리한다.
 	@Transactional
 	public void updateAlias(Long userId, Long cardId, CardAliasUpdateRequest request) {
-		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
+		CardRegistered card = findOwnedVisibleCard(userId, cardId);
 		card.updateAlias(request.normalizedCardAlias());
 	}
 
 	// [be] 이준혁 260521 1602 | ACTIVE 카드만 주카드로 지정하고, 기존 주카드를 먼저 해제해 DB unique 충돌을 피한다.
 	@Transactional
 	public void setDefault(Long userId, Long cardId) {
-		CardRegistered targetCard = findOwnedNonDeletedCard(userId, cardId);
+		CardRegistered targetCard = findOwnedVisibleCard(userId, cardId);
 		if (!targetCard.isActive()) {
 			throw new CardNotActiveException();
 		}
@@ -78,32 +94,74 @@ public class CardManagementService {
 		targetCard.markDefault();
 	}
 
-	// [be] 이준혁 260521 1602 | 카드는 물리 삭제하지 않고 DELETED 상태로 바꾼다. 주카드 삭제 시 다른 ACTIVE 카드를 대체 주카드로 지정한다.
-	@Transactional
+	// [be] 이준혁 260528 2140 | billing-key 비활성화가 성공한 뒤에만 카드 DB를 soft delete하고 대체 주카드를 지정한다.
 	public void deleteCard(Long userId, Long cardId) {
 		CardRegistered card = findOwnedCard(userId, cardId);
 		if (card.isDeleted()) {
 			return;
 		}
-
-		boolean defaultCard = card.isDefaultCard();
-		card.delete(LocalDateTime.now(clock));
-
-		if (defaultCard) {
-			cardRegisteredRepository
-				.findFirstByUserIdAndStatusAndCardIdNotOrderByCreatedAtAscCardIdAsc(
-					userId,
-					CardStatus.ACTIVE,
-					cardId
-				)
-				.ifPresent(CardRegistered::markDefault);
+		if (card.isRegistering()) {
+			throw new CardNotFoundException();
 		}
+		if (!card.hasBillingKey()) {
+			throw new BillingKeyNotFoundException();
+		}
+
+		deactivateBillingKey(card.getCardId(), card.getEncryptedBillingKey());
+		softDeleteCard(userId, cardId);
+	}
+
+	private void deactivateBillingKey(Long payCardId, String billingKey) {
+		BillingKeyDeleteResponse response;
+		try {
+			response = billingKeyServiceClient.delete(new BillingKeyDeleteRequest(payCardId, billingKey));
+		} catch (FeignException exception) {
+			if (isBillingKeyServiceUnavailable(exception.status())) {
+				throw new BillingKeyServiceUnavailableException(exception);
+			}
+			throw new BillingKeyDeactivationFailedException(exception);
+		} catch (RuntimeException exception) {
+			throw new BillingKeyServiceUnavailableException(exception);
+		}
+
+		if (response == null || !BILLING_KEY_DELETE_SUCCESS.equals(response.responseCode())) {
+			throw new BillingKeyDeactivationFailedException();
+		}
+	}
+
+	private boolean isBillingKeyServiceUnavailable(int status) {
+		return status <= 0 || status >= 500;
+	}
+
+	private void softDeleteCard(Long userId, Long cardId) {
+		transactionTemplate.executeWithoutResult(status -> {
+			CardRegistered card = findOwnedCard(userId, cardId);
+			if (card.isDeleted()) {
+				return;
+			}
+			if (card.isRegistering()) {
+				throw new CardNotFoundException();
+			}
+
+			boolean defaultCard = card.isDefaultCard();
+			card.delete(LocalDateTime.now(clock));
+
+			if (defaultCard) {
+				cardRegisteredRepository
+					.findFirstByUserIdAndStatusAndCardIdNotOrderByCreatedAtAscCardIdAsc(
+						userId,
+						CardStatus.ACTIVE,
+						cardId
+					)
+					.ifPresent(CardRegistered::markDefault);
+			}
+		});
 	}
 
 	// [be] 이준혁 260521 1602 | 사용자에게 결제 가능한 ACTIVE 카드가 1장 이상 있는지 확인한다.
 	@Transactional(readOnly = true)
 	public PaymentAvailabilityResponse checkUserPaymentAvailability(Long userId) {
-		if (!cardRegisteredRepository.existsByUserIdAndStatusNot(userId, CardStatus.DELETED)) {
+		if (!cardRegisteredRepository.existsByUserIdAndStatusIn(userId, VISIBLE_CARD_STATUSES)) {
 			return PaymentAvailabilityResponse.unavailable(CARD_NOT_FOUND);
 		}
 		if (!cardRegisteredRepository.existsByUserIdAndStatus(userId, CardStatus.ACTIVE)) {
@@ -118,7 +176,7 @@ public class CardManagementService {
 	// [be] 이준혁 260521 1602 | 특정 카드 1장이 결제 가능한 ACTIVE 카드이고 billing key를 갖는지 확인한다.
 	@Transactional(readOnly = true)
 	public PaymentAvailabilityResponse checkCardPaymentAvailability(Long userId, Long cardId) {
-		CardRegistered card = findOwnedCard(userId, cardId);
+		CardRegistered card = findOwnedVisibleCard(userId, cardId);
 		if (!card.isActive()) {
 			return PaymentAvailabilityResponse.unavailable(CARD_NOT_ACTIVE);
 		}
@@ -128,8 +186,8 @@ public class CardManagementService {
 		return PaymentAvailabilityResponse.available();
 	}
 
-	private CardRegistered findOwnedNonDeletedCard(Long userId, Long cardId) {
-		return cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(cardId, userId, CardStatus.DELETED)
+	private CardRegistered findOwnedVisibleCard(Long userId, Long cardId) {
+		return cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(cardId, userId, VISIBLE_CARD_STATUSES)
 			.orElseThrow(CardNotFoundException::new);
 	}
 

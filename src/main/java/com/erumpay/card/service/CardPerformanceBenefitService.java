@@ -28,6 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CardPerformanceBenefitService {
 
+	private static final List<CardStatus> VISIBLE_CARD_STATUSES = List.of(
+		CardStatus.ACTIVE,
+		CardStatus.PAUSED,
+		CardStatus.EXPIRED
+	);
+
 	private final CardRegisteredRepository cardRegisteredRepository;
 	private final CardPerformanceRepository cardPerformanceRepository;
 	private final CardBenefitRepository cardBenefitRepository;
@@ -39,7 +45,7 @@ public class CardPerformanceBenefitService {
 	@Transactional(readOnly = true)
 	public CardPerformanceResponse getPerformance(Long userId, Long cardId, String yearMonth) {
 		yearMonthValidator.validate(yearMonth);
-		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
+		CardRegistered card = findOwnedVisibleCard(userId, cardId);
 
 		Long amount = cardPerformanceRepository.findByCardIdAndUserIdAndYearMonth(card.getCardId(), userId, yearMonth)
 			.map(CardPerformance::getAmount)
@@ -55,7 +61,7 @@ public class CardPerformanceBenefitService {
 	// [be] 이준혁 260521 2028 | 카드 상품의 혜택, 브랜드 제한, 실적 구간을 함께 조회해 응답 형태로 묶는다.
 	@Transactional(readOnly = true)
 	public List<CardBenefitResponse> getBenefits(Long userId, Long cardId) {
-		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
+		CardRegistered card = findOwnedVisibleCard(userId, cardId);
 		List<CardBenefit> benefits = cardBenefitRepository
 			.findByCardProductIdOrderByPriorityDescBenefitIdAsc(card.getCardProductId());
 		if (benefits.isEmpty()) {
@@ -77,8 +83,8 @@ public class CardPerformanceBenefitService {
 			.toList();
 	}
 
-	private CardRegistered findOwnedNonDeletedCard(Long userId, Long cardId) {
-		return cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(cardId, userId, CardStatus.DELETED)
+	private CardRegistered findOwnedVisibleCard(Long userId, Long cardId) {
+		return cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(cardId, userId, VISIBLE_CARD_STATUSES)
 			.orElseThrow(CardNotFoundException::new);
 	}
 

@@ -3,6 +3,7 @@ package com.erumpay.card.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -29,11 +30,13 @@ import com.erumpay.card.repository.CardPerformanceRepository;
 import com.erumpay.card.repository.CardRegisteredRepository;
 import java.math.BigDecimal;
 import java.time.LocalTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -74,7 +77,7 @@ class CardPerformanceBenefitServiceTest {
 		CardRegistered card = card(10L, 1L, 100L);
 		CardPerformance performance = performance(350000L);
 
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 		when(cardPerformanceRepository.findByCardIdAndUserIdAndYearMonth(10L, 1L, "202605"))
 			.thenReturn(Optional.of(performance));
@@ -84,13 +87,17 @@ class CardPerformanceBenefitServiceTest {
 		assertThat(response.getCardId()).isEqualTo(10L);
 		assertThat(response.getYearMonth()).isEqualTo("202605");
 		assertThat(response.getAmount()).isEqualTo(350000L);
+		ArgumentCaptor<Collection<CardStatus>> statusesCaptor = ArgumentCaptor.forClass(Collection.class);
+		verify(cardRegisteredRepository)
+			.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), statusesCaptor.capture());
+		assertVisibleStatuses(statusesCaptor.getValue());
 	}
 
 	@Test
 	void getPerformanceReturnsZeroWhenPerformanceDoesNotExist() {
 		CardRegistered card = card(10L, 1L, 100L);
 
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 		when(cardPerformanceRepository.findByCardIdAndUserIdAndYearMonth(10L, 1L, "202605"))
 			.thenReturn(Optional.empty());
@@ -105,12 +112,12 @@ class CardPerformanceBenefitServiceTest {
 		assertThatThrownBy(() -> cardPerformanceBenefitService.getPerformance(1L, 10L, "202613"))
 			.isInstanceOf(InvalidYearMonthException.class);
 
-		verify(cardRegisteredRepository, never()).findByCardIdAndUserIdAndStatusNot(any(), any(), any());
+		verify(cardRegisteredRepository, never()).findByCardIdAndUserIdAndStatusIn(any(), any(), any());
 	}
 
 	@Test
 	void getPerformanceFailsWhenCardDoesNotBelongToUser() {
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> cardPerformanceBenefitService.getPerformance(1L, 10L, "202605"))
@@ -124,7 +131,7 @@ class CardPerformanceBenefitServiceTest {
 		CardBenefitBrand brand = brand(1000L, "스타벅스");
 		CardBenefitTier tier = tier(2000L, 1000L, 300000L);
 
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 		when(cardBenefitRepository.findByCardProductIdOrderByPriorityDescBenefitIdAsc(100L))
 			.thenReturn(List.of(benefit));
@@ -156,7 +163,7 @@ class CardPerformanceBenefitServiceTest {
 		CardRegistered card = card(10L, 1L, 100L);
 		CardBenefit benefit = benefit(1000L, 100L, ServiceCategory.CAFE, BenefitType.DISCOUNT);
 
-		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 		when(cardBenefitRepository.findByCardProductIdOrderByPriorityDescBenefitIdAsc(100L))
 			.thenReturn(List.of(benefit));
@@ -169,6 +176,14 @@ class CardPerformanceBenefitServiceTest {
 
 		assertThat(responses.getFirst().getBrandNames()).isEmpty();
 		assertThat(responses.getFirst().getTiers()).isEmpty();
+	}
+
+	private void assertVisibleStatuses(Collection<CardStatus> statuses) {
+		assertThat(statuses).containsExactlyInAnyOrder(
+			CardStatus.ACTIVE,
+			CardStatus.PAUSED,
+			CardStatus.EXPIRED
+		);
 	}
 
 	private CardRegistered card(Long cardId, Long userId, Long cardProductId) {

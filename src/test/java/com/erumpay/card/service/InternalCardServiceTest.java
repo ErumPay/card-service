@@ -7,9 +7,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.erumpay.card.client.BillingKeyServiceClient;
 import com.erumpay.card.domain.entity.CardBenefit;
 import com.erumpay.card.domain.entity.CardBenefitBrand;
 import com.erumpay.card.domain.entity.CardBenefitTier;
@@ -26,7 +28,11 @@ import com.erumpay.card.dto.InternalBillingKeyResponse;
 import com.erumpay.card.dto.InternalDeactivateCardsResponse;
 import com.erumpay.card.dto.InternalDefaultCardResponse;
 import com.erumpay.card.dto.InternalRecommendationSourceResponse;
+import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
+import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
+import com.erumpay.card.exception.BillingKeyDeactivationFailedException;
 import com.erumpay.card.exception.BillingKeyNotFoundException;
+import com.erumpay.card.exception.BillingKeyServiceUnavailableException;
 import com.erumpay.card.exception.CardNotActiveException;
 import com.erumpay.card.exception.CardNotFoundException;
 import com.erumpay.card.exception.InvalidYearMonthException;
@@ -45,12 +51,18 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import feign.FeignException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class InternalCardServiceTest {
@@ -81,6 +93,9 @@ class InternalCardServiceTest {
 	@Mock
 	private CardBenefitUsageRepository cardBenefitUsageRepository;
 
+	@Mock
+	private BillingKeyServiceClient billingKeyServiceClient;
+
 	private InternalCardService internalCardService;
 
 	@BeforeEach
@@ -93,8 +108,10 @@ class InternalCardServiceTest {
 			cardBenefitBrandRepository,
 			cardBenefitTierRepository,
 			cardBenefitUsageRepository,
+			billingKeyServiceClient,
 			FIXED_CLOCK,
-			new YearMonthValidator()
+			new YearMonthValidator(),
+			transactionTemplate()
 		);
 	}
 
@@ -129,6 +146,16 @@ class InternalCardServiceTest {
 
 		assertThatThrownBy(() -> internalCardService.getBillingKey(1L, 10L))
 			.isInstanceOf(CardNotActiveException.class);
+	}
+
+	@Test
+	void getBillingKeyFailsAsNotFoundWhenCardIsRegistering() {
+		CardRegistered card = card(10L, 1L, 100L, CardStatus.REGISTERING, false, null);
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+			.thenReturn(Optional.of(card));
+
+		assertThatThrownBy(() -> internalCardService.getBillingKey(1L, 10L))
+			.isInstanceOf(CardNotFoundException.class);
 	}
 
 	@Test
@@ -243,21 +270,124 @@ class InternalCardServiceTest {
 	}
 
 	@Test
-	void deactivateAllDeletesOnlyNonDeletedCardsAndReturnsCount() {
+	void deactivateAllDeletesCardsAfterBillingKeyDeactivationInOrder() {
 		CardRegistered activeCard = card(10L, 1L, 100L, CardStatus.ACTIVE, true, "encrypted-key");
 		CardRegistered pausedCard = card(11L, 1L, 101L, CardStatus.PAUSED, false, "encrypted-key");
+		CardRegistered registeringCard = card(12L, 1L, 102L, CardStatus.REGISTERING, false, null);
 
-		when(cardRegisteredRepository.findByUserIdAndStatusNot(1L, CardStatus.DELETED))
-			.thenReturn(List.of(activeCard, pausedCard));
+		when(cardRegisteredRepository.findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(1L, CardStatus.DELETED))
+			.thenReturn(List.of(activeCard, pausedCard, registeringCard));
+		when(billingKeyServiceClient.delete(any()))
+			.thenReturn(deleteResponse(10L, "100"))
+			.thenReturn(deleteResponse(11L, "100"));
 
 		InternalDeactivateCardsResponse response = internalCardService.deactivateAll(1L);
 
 		assertThat(response.getUserId()).isEqualTo(1L);
-		assertThat(response.getDeactivatedCount()).isEqualTo(2);
+		assertThat(response.getDeactivatedCount()).isEqualTo(3);
+
+		ArgumentCaptor<BillingKeyDeleteRequest> deleteRequestCaptor =
+			ArgumentCaptor.forClass(BillingKeyDeleteRequest.class);
+		verify(billingKeyServiceClient, times(2)).delete(deleteRequestCaptor.capture());
+		assertThat(deleteRequestCaptor.getAllValues())
+			.extracting(BillingKeyDeleteRequest::payCardId)
+			.containsExactly(10L, 11L);
 
 		ArgumentCaptor<LocalDateTime> deletedAtCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
 		verify(activeCard).delete(deletedAtCaptor.capture());
 		verify(pausedCard).delete(deletedAtCaptor.getValue());
+		verify(registeringCard).delete(deletedAtCaptor.getValue());
+		verify(cardRegisteredRepository).save(activeCard);
+		verify(cardRegisteredRepository).save(pausedCard);
+		verify(cardRegisteredRepository).save(registeringCard);
+	}
+
+	@Test
+	void deactivateAllTreatsBillingKeyNotFoundAsIdempotentSuccess() {
+		CardRegistered activeCard = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "encrypted-key");
+		FeignException notFound = mock(FeignException.class);
+
+		when(cardRegisteredRepository.findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(1L, CardStatus.DELETED))
+			.thenReturn(List.of(activeCard));
+		when(notFound.status()).thenReturn(404);
+		when(billingKeyServiceClient.delete(any())).thenThrow(notFound);
+
+		InternalDeactivateCardsResponse response = internalCardService.deactivateAll(1L);
+
+		assertThat(response.getDeactivatedCount()).isEqualTo(1);
+		verify(activeCard).delete(LocalDateTime.now(FIXED_CLOCK));
+		verify(cardRegisteredRepository).save(activeCard);
+	}
+
+	@Test
+	void deactivateAllFailsWhenBillingKeyDeleteReturnsClientErrorExceptNotFound() {
+		CardRegistered activeCard = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "encrypted-key");
+		FeignException badRequest = mock(FeignException.class);
+
+		when(cardRegisteredRepository.findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(1L, CardStatus.DELETED))
+			.thenReturn(List.of(activeCard));
+		when(badRequest.status()).thenReturn(400);
+		when(billingKeyServiceClient.delete(any())).thenThrow(badRequest);
+
+		assertThatThrownBy(() -> internalCardService.deactivateAll(1L))
+			.isInstanceOf(BillingKeyDeactivationFailedException.class);
+
+		verify(activeCard, never()).delete(any());
+		verify(cardRegisteredRepository, never()).save(activeCard);
+	}
+
+	@Test
+	void deactivateAllDeletesLiveCardWithoutBillingKeyWithoutBillingKeyServiceCall() {
+		CardRegistered activeCard = card(10L, 1L, 100L, CardStatus.ACTIVE, false, " ");
+
+		when(cardRegisteredRepository.findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(1L, CardStatus.DELETED))
+			.thenReturn(List.of(activeCard));
+
+		InternalDeactivateCardsResponse response = internalCardService.deactivateAll(1L);
+
+		assertThat(response.getDeactivatedCount()).isEqualTo(1);
+		verify(billingKeyServiceClient, never()).delete(any());
+		verify(activeCard).delete(LocalDateTime.now(FIXED_CLOCK));
+		verify(cardRegisteredRepository).save(activeCard);
+	}
+
+	@Test
+	void deactivateAllStopsWhenBillingKeyDeleteReturnsNonSuccess() {
+		CardRegistered firstCard = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "first-key");
+		CardRegistered failedCard = card(11L, 1L, 101L, CardStatus.PAUSED, false, "failed-key");
+		CardRegistered remainingCard = card(12L, 1L, 102L, CardStatus.EXPIRED, false, "remaining-key");
+
+		when(cardRegisteredRepository.findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(1L, CardStatus.DELETED))
+			.thenReturn(List.of(firstCard, failedCard, remainingCard));
+		when(billingKeyServiceClient.delete(any()))
+			.thenReturn(deleteResponse(10L, "100"))
+			.thenReturn(deleteResponse(11L, "999"));
+
+		assertThatThrownBy(() -> internalCardService.deactivateAll(1L))
+			.isInstanceOf(BillingKeyDeactivationFailedException.class);
+
+		verify(firstCard).delete(LocalDateTime.now(FIXED_CLOCK));
+		verify(cardRegisteredRepository).save(firstCard);
+		verify(failedCard, never()).delete(any());
+		verify(remainingCard, never()).delete(any());
+		verify(billingKeyServiceClient, times(2)).delete(any());
+	}
+
+	@Test
+	void deactivateAllFailsWhenBillingKeyServiceIsUnavailable() {
+		CardRegistered activeCard = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "encrypted-key");
+		FeignException unavailable = mock(FeignException.class);
+
+		when(cardRegisteredRepository.findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(1L, CardStatus.DELETED))
+			.thenReturn(List.of(activeCard));
+		when(unavailable.status()).thenReturn(503);
+		when(billingKeyServiceClient.delete(any())).thenThrow(unavailable);
+
+		assertThatThrownBy(() -> internalCardService.deactivateAll(1L))
+			.isInstanceOf(BillingKeyServiceUnavailableException.class);
+
+		verify(activeCard, never()).delete(any());
+		verify(cardRegisteredRepository, never()).save(activeCard);
 	}
 
 	private CardRegistered card(
@@ -276,9 +406,15 @@ class InternalCardServiceTest {
 		lenient().when(card.getEncryptedBillingKey()).thenReturn(billingKey);
 		lenient().when(card.getStatus()).thenReturn(status);
 		lenient().when(card.isDefaultCard()).thenReturn(defaultCard);
+		lenient().when(card.isDeleted()).thenReturn(status == CardStatus.DELETED);
+		lenient().when(card.isRegistering()).thenReturn(status == CardStatus.REGISTERING);
 		lenient().when(card.isActive()).thenReturn(status == CardStatus.ACTIVE);
 		lenient().when(card.hasBillingKey()).thenReturn(billingKey != null && !billingKey.isBlank());
 		return card;
+	}
+
+	private BillingKeyDeleteResponse deleteResponse(Long payCardId, String responseCode) {
+		return new BillingKeyDeleteResponse(payCardId, "billing-key", responseCode, "OK");
 	}
 
 	private CardProduct product(Long cardProductId, String cardCompany, String cardName) {
@@ -334,5 +470,22 @@ class InternalCardServiceTest {
 		when(usage.getBenefitAmount()).thenReturn(benefitAmount);
 		when(usage.getApprovedAt()).thenReturn(approvedAt);
 		return usage;
+	}
+
+	private TransactionTemplate transactionTemplate() {
+		return new TransactionTemplate(new PlatformTransactionManager() {
+			@Override
+			public TransactionStatus getTransaction(TransactionDefinition definition) {
+				return new SimpleTransactionStatus();
+			}
+
+			@Override
+			public void commit(TransactionStatus status) {
+			}
+
+			@Override
+			public void rollback(TransactionStatus status) {
+			}
+		});
 	}
 }
