@@ -6,7 +6,7 @@ public record BillingKeyIssueRequest(
 	@JsonProperty("pay_card_id") Long payCardId,
 	@JsonProperty("card_number") String cardNumber,
 	@JsonProperty("expiry_date") String expiryDate,
-	String cvc,
+	@JsonProperty("cvc") String cvc,
 	@JsonProperty("password_2digit") String password2digit,
 	@JsonProperty("birth_date") String birthDate
 ) {

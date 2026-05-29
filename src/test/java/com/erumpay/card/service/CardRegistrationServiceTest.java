@@ -307,6 +307,7 @@ class CardRegistrationServiceTest {
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
 		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
 		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
+		verify(billingKeyServiceClient, times(1)).issue(any());
 	}
 
 	@Test
@@ -326,6 +327,7 @@ class CardRegistrationServiceTest {
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
 		verify(cardRegisteredRepository).save(cardCaptor.capture());
 		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.REGISTERING);
+		verify(billingKeyServiceClient, times(2)).issue(any());
 	}
 
 	@Test

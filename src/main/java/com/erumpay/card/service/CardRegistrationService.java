@@ -184,7 +184,7 @@ public class CardRegistrationService {
 			return billingKeyServiceClient.issue(issueRequest);
 		} catch (FeignException exception) {
 			if (!isUnknownIssueResult(exception.status())) {
-				throw new BillingKeyIssueFailedException();
+				throw new BillingKeyIssueFailedException(exception);
 			}
 			return retryIssueBillingKeyOnce(issueRequest);
 		} catch (RuntimeException exception) {
@@ -199,7 +199,7 @@ public class CardRegistrationService {
 			if (isUnknownIssueResult(retryException.status())) {
 				throw new BillingKeyIssueUnknownException(retryException);
 			}
-			throw new BillingKeyIssueFailedException();
+			throw new BillingKeyIssueFailedException(retryException);
 		} catch (RuntimeException retryException) {
 			throw new BillingKeyIssueUnknownException(retryException);
 		}

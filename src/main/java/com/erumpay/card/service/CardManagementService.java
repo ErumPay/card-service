@@ -119,7 +119,7 @@ public class CardManagementService {
 			if (isBillingKeyServiceUnavailable(exception.status())) {
 				throw new BillingKeyServiceUnavailableException(exception);
 			}
-			throw new BillingKeyDeactivationFailedException();
+			throw new BillingKeyDeactivationFailedException(exception);
 		} catch (RuntimeException exception) {
 			throw new BillingKeyServiceUnavailableException(exception);
 		}
