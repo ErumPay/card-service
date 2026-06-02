@@ -11,6 +11,7 @@ import com.erumpay.card.domain.entity.CardRegistered;
 import com.erumpay.card.domain.enums.CardBenefitUsageStatus;
 import com.erumpay.card.domain.enums.CardStatus;
 import com.erumpay.card.dto.InternalBillingKeyResponse;
+import com.erumpay.card.dto.InternalBillingKeysResponse;
 import com.erumpay.card.dto.InternalDeactivateCardsResponse;
 import com.erumpay.card.dto.InternalDefaultCardResponse;
 import com.erumpay.card.dto.InternalRecommendationSourceResponse;
@@ -25,6 +26,7 @@ import com.erumpay.card.exception.BillingKeyNotFoundException;
 import com.erumpay.card.exception.BillingKeyServiceUnavailableException;
 import com.erumpay.card.exception.CardNotActiveException;
 import com.erumpay.card.exception.CardNotFoundException;
+import com.erumpay.card.exception.InvalidBillingKeyLookupRequestException;
 import com.erumpay.card.repository.CardBenefitBrandRepository;
 import com.erumpay.card.repository.CardBenefitRepository;
 import com.erumpay.card.repository.CardBenefitTierRepository;
@@ -38,8 +40,10 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import feign.FeignException;
@@ -75,6 +79,54 @@ public class InternalCardService {
 	@Transactional(readOnly = true)
 	public InternalBillingKeyResponse getBillingKey(Long userId, Long cardId) {
 		CardRegistered card = findOwnedNonDeletedCard(userId, cardId);
+		validateBillingKeyReadableCard(card);
+		CardProduct product = findProductById(card.getCardProductId());
+
+		return toBillingKeyResponse(card, product);
+	}
+
+	@Transactional(readOnly = true)
+	public InternalBillingKeysResponse getBillingKeys(Long userId, List<Long> cardIds) {
+		validateBillingKeyLookupCardIds(cardIds);
+		List<CardRegistered> cards = cardRegisteredRepository
+			.findByUserIdAndCardIdInAndStatusNot(userId, cardIds, CardStatus.DELETED);
+		Map<Long, CardRegistered> cardsById = cards.stream()
+			.collect(Collectors.toMap(CardRegistered::getCardId, Function.identity()));
+		Map<Long, CardProduct> productsById = findProductsById(cards.stream()
+			.map(CardRegistered::getCardProductId)
+			.toList());
+
+		List<InternalBillingKeyResponse> billingKeys = cardIds.stream()
+			.map(cardId -> {
+				CardRegistered card = cardsById.get(cardId);
+				if (card == null) {
+					throw new CardNotFoundException();
+				}
+				validateBillingKeyReadableCard(card);
+				return toBillingKeyResponse(card, productsById.get(card.getCardProductId()));
+			})
+			.toList();
+
+		return InternalBillingKeysResponse.builder()
+			.userId(userId)
+			.billingKeys(billingKeys)
+			.build();
+	}
+
+	private void validateBillingKeyLookupCardIds(List<Long> cardIds) {
+		if (cardIds == null || cardIds.isEmpty()) {
+			throw new InvalidBillingKeyLookupRequestException();
+		}
+
+		Set<Long> uniqueCardIds = new HashSet<>();
+		for (Long cardId : cardIds) {
+			if (cardId == null || !uniqueCardIds.add(cardId)) {
+				throw new InvalidBillingKeyLookupRequestException();
+			}
+		}
+	}
+
+	private void validateBillingKeyReadableCard(CardRegistered card) {
 		if (card.isRegistering()) {
 			throw new CardNotFoundException();
 		}
@@ -84,11 +136,17 @@ public class InternalCardService {
 		if (!card.hasBillingKey()) {
 			throw new BillingKeyNotFoundException();
 		}
+	}
 
+	private InternalBillingKeyResponse toBillingKeyResponse(CardRegistered card, CardProduct product) {
+		if (product == null) {
+			throw new IllegalStateException("Card product not found for registered card.");
+		}
 		return InternalBillingKeyResponse.builder()
 			.cardId(card.getCardId())
 			.userId(card.getUserId())
 			.cardProductId(card.getCardProductId())
+			.cardName(product.getCardName())
 			.billingKey(billingKeyCryptoService.decrypt(card.getEncryptedBillingKey()))
 			.maskedNumber(card.getMaskedNumber())
 			.build();

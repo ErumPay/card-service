@@ -25,6 +25,7 @@ import com.erumpay.card.domain.enums.CardStatus;
 import com.erumpay.card.domain.enums.DayCondition;
 import com.erumpay.card.domain.enums.ServiceCategory;
 import com.erumpay.card.dto.InternalBillingKeyResponse;
+import com.erumpay.card.dto.InternalBillingKeysResponse;
 import com.erumpay.card.dto.InternalDeactivateCardsResponse;
 import com.erumpay.card.dto.InternalDefaultCardResponse;
 import com.erumpay.card.dto.InternalRecommendationSourceResponse;
@@ -35,6 +36,7 @@ import com.erumpay.card.exception.BillingKeyNotFoundException;
 import com.erumpay.card.exception.BillingKeyServiceUnavailableException;
 import com.erumpay.card.exception.CardNotActiveException;
 import com.erumpay.card.exception.CardNotFoundException;
+import com.erumpay.card.exception.InvalidBillingKeyLookupRequestException;
 import com.erumpay.card.exception.InvalidYearMonthException;
 import com.erumpay.card.repository.CardBenefitBrandRepository;
 import com.erumpay.card.repository.CardBenefitRepository;
@@ -49,6 +51,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import feign.FeignException;
@@ -123,13 +126,16 @@ class InternalCardServiceTest {
 	void getBillingKeyReturnsBillingKeyForActiveOwnedCard() {
 		String encryptedBillingKey = billingKeyCryptoService.encrypt("billing-key");
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, encryptedBillingKey);
+		CardProduct product = product(100L, "롯데카드", "LOCA 365 카드");
 		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
 			.thenReturn(Optional.of(card));
+		when(cardProductRepository.findById(100L)).thenReturn(Optional.of(product));
 
 		InternalBillingKeyResponse response = internalCardService.getBillingKey(1L, 10L);
 
 		assertThat(response.getCardId()).isEqualTo(10L);
 		assertThat(response.getUserId()).isEqualTo(1L);
+		assertThat(response.getCardName()).isEqualTo("LOCA 365 카드");
 		assertThat(response.getBillingKey()).isEqualTo("billing-key");
 		assertThat(response.toString()).doesNotContain("billing-key");
 	}
@@ -137,12 +143,83 @@ class InternalCardServiceTest {
 	@Test
 	void getBillingKeyReturnsLegacyPlainBillingKey() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "legacy-billing-key");
+		CardProduct product = product(100L, "롯데카드", "LOCA 365 카드");
 		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
 			.thenReturn(Optional.of(card));
+		when(cardProductRepository.findById(100L)).thenReturn(Optional.of(product));
 
 		InternalBillingKeyResponse response = internalCardService.getBillingKey(1L, 10L);
 
 		assertThat(response.getBillingKey()).isEqualTo("legacy-billing-key");
+	}
+
+	@Test
+	void getBillingKeysReturnsBillingKeysInRequestedOrder() {
+		CardRegistered firstCard = card(
+			10L,
+			1L,
+			100L,
+			CardStatus.ACTIVE,
+			false,
+			billingKeyCryptoService.encrypt("first-billing-key")
+		);
+		CardRegistered secondCard = card(
+			20L,
+			1L,
+			200L,
+			CardStatus.ACTIVE,
+			false,
+			billingKeyCryptoService.encrypt("second-billing-key")
+		);
+		CardProduct firstProduct = product(100L, "롯데카드", "LOCA 365 카드");
+		CardProduct secondProduct = product(200L, "KB국민카드", "KB국민 My WE:SH 카드");
+
+		when(cardRegisteredRepository.findByUserIdAndCardIdInAndStatusNot(1L, List.of(10L, 20L), CardStatus.DELETED))
+			.thenReturn(List.of(secondCard, firstCard));
+		when(cardProductRepository.findAllById(any())).thenReturn(List.of(firstProduct, secondProduct));
+
+		InternalBillingKeysResponse response = internalCardService.getBillingKeys(1L, List.of(10L, 20L));
+
+		assertThat(response.getUserId()).isEqualTo(1L);
+		assertThat(response.getBillingKeys()).hasSize(2);
+		assertThat(response.getBillingKeys().get(0).getCardId()).isEqualTo(10L);
+		assertThat(response.getBillingKeys().get(0).getCardName()).isEqualTo("LOCA 365 카드");
+		assertThat(response.getBillingKeys().get(0).getBillingKey()).isEqualTo("first-billing-key");
+		assertThat(response.getBillingKeys().get(1).getCardId()).isEqualTo(20L);
+		assertThat(response.getBillingKeys().get(1).getCardName()).isEqualTo("KB국민 My WE:SH 카드");
+		assertThat(response.getBillingKeys().get(1).getBillingKey()).isEqualTo("second-billing-key");
+		assertThat(response.toString()).doesNotContain("first-billing-key", "second-billing-key");
+	}
+
+	@Test
+	void getBillingKeysRejectsInvalidCardIds() {
+		assertThatThrownBy(() -> internalCardService.getBillingKeys(1L, List.of()))
+			.isInstanceOf(InvalidBillingKeyLookupRequestException.class);
+		assertThatThrownBy(() -> internalCardService.getBillingKeys(1L, List.of(10L, 10L)))
+			.isInstanceOf(InvalidBillingKeyLookupRequestException.class);
+		assertThatThrownBy(() -> internalCardService.getBillingKeys(1L, Arrays.asList(10L, null)))
+			.isInstanceOf(InvalidBillingKeyLookupRequestException.class);
+
+		verify(cardRegisteredRepository, never()).findByUserIdAndCardIdInAndStatusNot(any(), any(), any());
+	}
+
+	@Test
+	void getBillingKeysFailsWhenAnyCardDoesNotExist() {
+		CardRegistered card = card(
+			10L,
+			1L,
+			100L,
+			CardStatus.ACTIVE,
+			false,
+			billingKeyCryptoService.encrypt("billing-key")
+		);
+		CardProduct product = product(100L, "롯데카드", "LOCA 365 카드");
+		when(cardRegisteredRepository.findByUserIdAndCardIdInAndStatusNot(1L, List.of(10L, 20L), CardStatus.DELETED))
+			.thenReturn(List.of(card));
+		when(cardProductRepository.findAllById(any())).thenReturn(List.of(product));
+
+		assertThatThrownBy(() -> internalCardService.getBillingKeys(1L, List.of(10L, 20L)))
+			.isInstanceOf(CardNotFoundException.class);
 	}
 
 	@Test
