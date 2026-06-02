@@ -372,6 +372,7 @@ class CardRegistrationServiceTest {
 		assertThat(response.getIsDefault()).isTrue();
 		assertThat(currentDefault.isDefaultCard()).isFalse();
 		verify(cardRegisteredRepository).save(currentDefault);
+		verify(cardRegisteredRepository).flush();
 	}
 
 	@Test
