@@ -223,6 +223,63 @@ class InternalCardServiceTest {
 	}
 
 	@Test
+	void getBillingKeysFailsWhenAnyCardIsNotActive() {
+		CardRegistered activeCard = card(
+			10L,
+			1L,
+			100L,
+			CardStatus.ACTIVE,
+			false,
+			billingKeyCryptoService.encrypt("billing-key")
+		);
+		CardRegistered pausedCard = card(20L, 1L, 200L, CardStatus.PAUSED, false, "paused-billing-key");
+		CardProduct activeProduct = product(100L, "롯데카드", "LOCA 365 카드");
+		CardProduct pausedProduct = product(200L, "KB국민카드", "KB국민 My WE:SH 카드");
+		when(cardRegisteredRepository.findByUserIdAndCardIdInAndStatusNot(1L, List.of(10L, 20L), CardStatus.DELETED))
+			.thenReturn(List.of(activeCard, pausedCard));
+		when(cardProductRepository.findAllById(any()))
+			.thenReturn(List.of(activeProduct, pausedProduct));
+
+		assertThatThrownBy(() -> internalCardService.getBillingKeys(1L, List.of(10L, 20L)))
+			.isInstanceOf(CardNotActiveException.class);
+	}
+
+	@Test
+	void getBillingKeysFailsWhenAnyCardHasNoBillingKey() {
+		CardRegistered activeCard = card(
+			10L,
+			1L,
+			100L,
+			CardStatus.ACTIVE,
+			false,
+			billingKeyCryptoService.encrypt("billing-key")
+		);
+		CardRegistered noKeyCard = card(20L, 1L, 200L, CardStatus.ACTIVE, false, " ");
+		CardProduct activeProduct = product(100L, "롯데카드", "LOCA 365 카드");
+		CardProduct noKeyProduct = product(200L, "KB국민카드", "KB국민 My WE:SH 카드");
+		when(cardRegisteredRepository.findByUserIdAndCardIdInAndStatusNot(1L, List.of(10L, 20L), CardStatus.DELETED))
+			.thenReturn(List.of(activeCard, noKeyCard));
+		when(cardProductRepository.findAllById(any()))
+			.thenReturn(List.of(activeProduct, noKeyProduct));
+
+		assertThatThrownBy(() -> internalCardService.getBillingKeys(1L, List.of(10L, 20L)))
+			.isInstanceOf(BillingKeyNotFoundException.class);
+	}
+
+	@Test
+	void getBillingKeysFailsByFirstInvalidCardInRequestedOrder() {
+		CardRegistered pausedCard = card(10L, 1L, 100L, CardStatus.PAUSED, false, "paused-billing-key");
+		CardProduct pausedProduct = product(100L, "롯데카드", "LOCA 365 카드");
+		when(cardRegisteredRepository.findByUserIdAndCardIdInAndStatusNot(1L, List.of(10L, 20L), CardStatus.DELETED))
+			.thenReturn(List.of(pausedCard));
+		when(cardProductRepository.findAllById(any()))
+			.thenReturn(List.of(pausedProduct));
+
+		assertThatThrownBy(() -> internalCardService.getBillingKeys(1L, List.of(10L, 20L)))
+			.isInstanceOf(CardNotActiveException.class);
+	}
+
+	@Test
 	void getBillingKeyFailsWhenCardDoesNotBelongToUser() {
 		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
 			.thenReturn(Optional.empty());
