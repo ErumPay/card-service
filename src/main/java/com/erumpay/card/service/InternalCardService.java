@@ -196,9 +196,9 @@ public class InternalCardService {
 	}
 
 	private void deactivateBillingKeyForWithdraw(CardRegistered card) {
+		String billingKey = billingKeyCryptoService.decrypt(card.getEncryptedBillingKey());
 		BillingKeyDeleteResponse response;
 		try {
-			String billingKey = billingKeyCryptoService.decrypt(card.getEncryptedBillingKey());
 			response = billingKeyServiceClient.delete(
 				new BillingKeyDeleteRequest(card.getCardId(), billingKey)
 			);

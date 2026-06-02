@@ -3,7 +3,9 @@ package com.erumpay.card.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -44,6 +46,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -371,8 +374,11 @@ class CardRegistrationServiceTest {
 
 		assertThat(response.getIsDefault()).isTrue();
 		assertThat(currentDefault.isDefaultCard()).isFalse();
-		verify(cardRegisteredRepository).save(currentDefault);
-		verify(cardRegisteredRepository).flush();
+		InOrder inOrder = inOrder(cardRegisteredRepository);
+		inOrder.verify(cardRegisteredRepository).save(currentDefault);
+		inOrder.verify(cardRegisteredRepository).flush();
+		inOrder.verify(cardRegisteredRepository)
+			.save(argThat(card -> card != currentDefault && card.isDefaultCard()));
 	}
 
 	@Test

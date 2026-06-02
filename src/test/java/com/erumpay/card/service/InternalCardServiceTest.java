@@ -385,6 +385,22 @@ class InternalCardServiceTest {
 	}
 
 	@Test
+	void deactivateAllStopsWhenEncryptedBillingKeyCannotBeDecrypted() {
+		CardRegistered activeCard = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "enc:v1:invalid-base64");
+
+		when(cardRegisteredRepository.findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(1L, CardStatus.DELETED))
+			.thenReturn(List.of(activeCard));
+
+		assertThatThrownBy(() -> internalCardService.deactivateAll(1L))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("billing key decryption failed");
+
+		verify(billingKeyServiceClient, never()).delete(any());
+		verify(activeCard, never()).delete(any());
+		verify(cardRegisteredRepository, never()).save(activeCard);
+	}
+
+	@Test
 	void deactivateAllStopsWhenBillingKeyDeleteReturnsNonSuccess() {
 		CardRegistered firstCard = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "first-key");
 		CardRegistered failedCard = card(11L, 1L, 101L, CardStatus.PAUSED, false, "failed-key");
