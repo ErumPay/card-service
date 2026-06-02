@@ -66,6 +66,7 @@ public class InternalCardService {
 	private final CardBenefitTierRepository cardBenefitTierRepository;
 	private final CardBenefitUsageRepository cardBenefitUsageRepository;
 	private final BillingKeyServiceClient billingKeyServiceClient;
+	private final BillingKeyCryptoService billingKeyCryptoService;
 	private final Clock clock;
 	private final YearMonthValidator yearMonthValidator;
 	private final TransactionTemplate transactionTemplate;
@@ -88,7 +89,7 @@ public class InternalCardService {
 			.cardId(card.getCardId())
 			.userId(card.getUserId())
 			.cardProductId(card.getCardProductId())
-			.billingKey(card.getEncryptedBillingKey())
+			.billingKey(billingKeyCryptoService.decrypt(card.getEncryptedBillingKey()))
 			.maskedNumber(card.getMaskedNumber())
 			.build();
 	}
@@ -197,8 +198,9 @@ public class InternalCardService {
 	private void deactivateBillingKeyForWithdraw(CardRegistered card) {
 		BillingKeyDeleteResponse response;
 		try {
+			String billingKey = billingKeyCryptoService.decrypt(card.getEncryptedBillingKey());
 			response = billingKeyServiceClient.delete(
-				new BillingKeyDeleteRequest(card.getCardId(), card.getEncryptedBillingKey())
+				new BillingKeyDeleteRequest(card.getCardId(), billingKey)
 			);
 		} catch (FeignException exception) {
 			if (exception.status() == HTTP_NOT_FOUND) {

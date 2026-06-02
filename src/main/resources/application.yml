@@ -24,3 +24,7 @@ auth:
 
 billing-key:
   base-url: ${BILLING_KEY_SERVICE_BASE_URL:http://localhost:8092}
+
+card:
+  billing-key:
+    aes-key: ${CARD_BILLING_KEY_AES_KEY}

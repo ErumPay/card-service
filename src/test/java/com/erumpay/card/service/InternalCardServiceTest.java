@@ -96,10 +96,13 @@ class InternalCardServiceTest {
 	@Mock
 	private BillingKeyServiceClient billingKeyServiceClient;
 
+	private BillingKeyCryptoService billingKeyCryptoService;
+
 	private InternalCardService internalCardService;
 
 	@BeforeEach
 	void setUp() {
+		billingKeyCryptoService = billingKeyCryptoService();
 		internalCardService = new InternalCardService(
 			cardRegisteredRepository,
 			cardProductRepository,
@@ -109,6 +112,7 @@ class InternalCardServiceTest {
 			cardBenefitTierRepository,
 			cardBenefitUsageRepository,
 			billingKeyServiceClient,
+			billingKeyCryptoService,
 			FIXED_CLOCK,
 			new YearMonthValidator(),
 			transactionTemplate()
@@ -117,7 +121,8 @@ class InternalCardServiceTest {
 
 	@Test
 	void getBillingKeyReturnsBillingKeyForActiveOwnedCard() {
-		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "encrypted-key");
+		String encryptedBillingKey = billingKeyCryptoService.encrypt("billing-key");
+		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, encryptedBillingKey);
 		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
 			.thenReturn(Optional.of(card));
 
@@ -125,8 +130,19 @@ class InternalCardServiceTest {
 
 		assertThat(response.getCardId()).isEqualTo(10L);
 		assertThat(response.getUserId()).isEqualTo(1L);
-		assertThat(response.getBillingKey()).isEqualTo("encrypted-key");
-		assertThat(response.toString()).doesNotContain("encrypted-key");
+		assertThat(response.getBillingKey()).isEqualTo("billing-key");
+		assertThat(response.toString()).doesNotContain("billing-key");
+	}
+
+	@Test
+	void getBillingKeyReturnsLegacyPlainBillingKey() {
+		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "legacy-billing-key");
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusNot(10L, 1L, CardStatus.DELETED))
+			.thenReturn(Optional.of(card));
+
+		InternalBillingKeyResponse response = internalCardService.getBillingKey(1L, 10L);
+
+		assertThat(response.getBillingKey()).isEqualTo("legacy-billing-key");
 	}
 
 	@Test
@@ -271,8 +287,22 @@ class InternalCardServiceTest {
 
 	@Test
 	void deactivateAllDeletesCardsAfterBillingKeyDeactivationInOrder() {
-		CardRegistered activeCard = card(10L, 1L, 100L, CardStatus.ACTIVE, true, "encrypted-key");
-		CardRegistered pausedCard = card(11L, 1L, 101L, CardStatus.PAUSED, false, "encrypted-key");
+		CardRegistered activeCard = card(
+			10L,
+			1L,
+			100L,
+			CardStatus.ACTIVE,
+			true,
+			billingKeyCryptoService.encrypt("active-billing-key")
+		);
+		CardRegistered pausedCard = card(
+			11L,
+			1L,
+			101L,
+			CardStatus.PAUSED,
+			false,
+			billingKeyCryptoService.encrypt("paused-billing-key")
+		);
 		CardRegistered registeringCard = card(12L, 1L, 102L, CardStatus.REGISTERING, false, null);
 
 		when(cardRegisteredRepository.findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(1L, CardStatus.DELETED))
@@ -292,6 +322,9 @@ class InternalCardServiceTest {
 		assertThat(deleteRequestCaptor.getAllValues())
 			.extracting(BillingKeyDeleteRequest::payCardId)
 			.containsExactly(10L, 11L);
+		assertThat(deleteRequestCaptor.getAllValues())
+			.extracting(BillingKeyDeleteRequest::billingKey)
+			.containsExactly("active-billing-key", "paused-billing-key");
 
 		ArgumentCaptor<LocalDateTime> deletedAtCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
 		verify(activeCard).delete(deletedAtCaptor.capture());
@@ -415,6 +448,12 @@ class InternalCardServiceTest {
 
 	private BillingKeyDeleteResponse deleteResponse(Long payCardId, String responseCode) {
 		return new BillingKeyDeleteResponse(payCardId, "billing-key", responseCode, "OK");
+	}
+
+	private BillingKeyCryptoService billingKeyCryptoService() {
+		BillingKeyCryptoService service = new BillingKeyCryptoService("0123456789abcdef");
+		service.init();
+		return service;
 	}
 
 	private CardProduct product(Long cardProductId, String cardCompany, String cardName) {

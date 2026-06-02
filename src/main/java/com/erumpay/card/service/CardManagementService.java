@@ -46,6 +46,7 @@ public class CardManagementService {
 	private final CardRegisteredRepository cardRegisteredRepository;
 	private final CardProductRepository cardProductRepository;
 	private final BillingKeyServiceClient billingKeyServiceClient;
+	private final BillingKeyCryptoService billingKeyCryptoService;
 	private final TransactionTemplate transactionTemplate;
 	private final Clock clock;
 
@@ -107,7 +108,8 @@ public class CardManagementService {
 			throw new BillingKeyNotFoundException();
 		}
 
-		deactivateBillingKey(card.getCardId(), card.getEncryptedBillingKey());
+		String billingKey = billingKeyCryptoService.decrypt(card.getEncryptedBillingKey());
+		deactivateBillingKey(card.getCardId(), billingKey);
 		softDeleteCard(userId, cardId);
 	}
 

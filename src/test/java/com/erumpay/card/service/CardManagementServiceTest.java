@@ -65,14 +65,18 @@ class CardManagementServiceTest {
 	@Mock
 	private BillingKeyServiceClient billingKeyServiceClient;
 
+	private BillingKeyCryptoService billingKeyCryptoService;
+
 	private CardManagementService cardManagementService;
 
 	@BeforeEach
 	void setUp() {
+		billingKeyCryptoService = billingKeyCryptoService();
 		cardManagementService = new CardManagementService(
 			cardRegisteredRepository,
 			cardProductRepository,
 			billingKeyServiceClient,
+			billingKeyCryptoService,
 			transactionTemplate(),
 			FIXED_CLOCK
 		);
@@ -165,7 +169,14 @@ class CardManagementServiceTest {
 
 	@Test
 	void deleteDefaultCardAssignsReplacementAfterSoftDelete() {
-		CardRegistered target = card(10L, 1L, 100L, CardStatus.ACTIVE, true, "billing-key");
+		CardRegistered target = card(
+			10L,
+			1L,
+			100L,
+			CardStatus.ACTIVE,
+			true,
+			billingKeyCryptoService.encrypt("billing-key")
+		);
 		CardRegistered replacement = card(11L, 1L, 101L, CardStatus.ACTIVE, false, "billing-key");
 
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
@@ -419,6 +430,12 @@ class CardManagementServiceTest {
 
 	private BillingKeyDeleteResponse successDeleteResponse(Long payCardId, String billingKey) {
 		return new BillingKeyDeleteResponse(payCardId, billingKey, "100", "OK");
+	}
+
+	private BillingKeyCryptoService billingKeyCryptoService() {
+		BillingKeyCryptoService service = new BillingKeyCryptoService("0123456789abcdef");
+		service.init();
+		return service;
 	}
 
 	private TransactionTemplate transactionTemplate() {
