@@ -1,15 +1,19 @@
 package com.erumpay.card.controller;
 
 import com.erumpay.card.dto.InternalBillingKeyResponse;
+import com.erumpay.card.dto.InternalBillingKeysRequest;
+import com.erumpay.card.dto.InternalBillingKeysResponse;
 import com.erumpay.card.dto.InternalDeactivateCardsResponse;
 import com.erumpay.card.dto.InternalDefaultCardResponse;
 import com.erumpay.card.dto.InternalRecommendationSourceResponse;
 import com.erumpay.card.service.InternalCardService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,6 +31,14 @@ public class InternalCardController {
 		@RequestParam Long userId
 	) {
 		return ResponseEntity.ok(internalCardService.getBillingKey(userId, cardId));
+	}
+
+	@PostMapping("/users/{userId}/billing-keys")
+	public ResponseEntity<InternalBillingKeysResponse> getBillingKeys(
+		@PathVariable Long userId,
+		@RequestBody @Valid InternalBillingKeysRequest request
+	) {
+		return ResponseEntity.ok(internalCardService.getBillingKeys(userId, request.cardIds()));
 	}
 
 	@GetMapping("/users/{userId}/default-card")

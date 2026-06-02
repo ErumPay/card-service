@@ -3,6 +3,7 @@ package com.erumpay.card.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
@@ -75,15 +76,19 @@ class CardRegistrationServiceTest {
 	@Mock
 	private BillingKeyServiceClient billingKeyServiceClient;
 
+	private BillingKeyCryptoService billingKeyCryptoService;
+
 	private CardRegistrationService cardRegistrationService;
 
 	@BeforeEach
 	void setUp() {
+		billingKeyCryptoService = billingKeyCryptoService();
 		cardRegistrationService = new CardRegistrationService(
 			cardProductRepository,
 			cardRegisteredRepository,
 			authServiceClient,
 			billingKeyServiceClient,
+			billingKeyCryptoService,
 			transactionTemplate(),
 			FIXED_CLOCK
 		);
@@ -190,6 +195,13 @@ class CardRegistrationServiceTest {
 		assertThat(issueRequest.payCardId()).isEqualTo(100L);
 		assertThat(issueRequest.expiryDate()).isEqualTo("2812");
 		assertThat(issueRequest.birthDate()).isEqualTo("900101");
+
+		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
+		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
+		String storedBillingKey = cardCaptor.getAllValues().getLast().getEncryptedBillingKey();
+		assertThat(storedBillingKey).startsWith("enc:v1:");
+		assertThat(storedBillingKey).isNotEqualTo("billing-key");
+		assertThat(billingKeyCryptoService.decrypt(storedBillingKey)).isEqualTo("billing-key");
 	}
 
 	@Test
@@ -365,6 +377,8 @@ class CardRegistrationServiceTest {
 		InOrder inOrder = inOrder(cardRegisteredRepository);
 		inOrder.verify(cardRegisteredRepository).save(currentDefault);
 		inOrder.verify(cardRegisteredRepository).flush();
+		inOrder.verify(cardRegisteredRepository)
+			.save(argThat(card -> card != currentDefault && card.isDefaultCard()));
 	}
 
 	@Test
@@ -464,6 +478,12 @@ class CardRegistrationServiceTest {
 
 	private BillingKeyIssueResponse issueResponse(String responseCode, String billingKey, String maskedNumber) {
 		return new BillingKeyIssueResponse(100L, billingKey, maskedNumber, "LOTTE", responseCode, "OK");
+	}
+
+	private BillingKeyCryptoService billingKeyCryptoService() {
+		BillingKeyCryptoService service = new BillingKeyCryptoService("0123456789abcdef");
+		service.init();
+		return service;
 	}
 
 	private TransactionTemplate transactionTemplate() {

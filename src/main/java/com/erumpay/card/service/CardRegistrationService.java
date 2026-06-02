@@ -61,6 +61,7 @@ public class CardRegistrationService {
 	private final CardRegisteredRepository cardRegisteredRepository;
 	private final AuthServiceClient authServiceClient;
 	private final BillingKeyServiceClient billingKeyServiceClient;
+	private final BillingKeyCryptoService billingKeyCryptoService;
 	private final TransactionTemplate transactionTemplate;
 	private final Clock clock;
 
@@ -247,7 +248,8 @@ public class CardRegistrationService {
 						cardRegisteredRepository.flush();
 					});
 				}
-				registeringCard.activate(issueResponse.billingKey(), issueResponse.maskedNumber(), shouldBeDefault);
+				String encryptedBillingKey = billingKeyCryptoService.encrypt(issueResponse.billingKey());
+				registeringCard.activate(encryptedBillingKey, issueResponse.maskedNumber(), shouldBeDefault);
 				return cardRegisteredRepository.save(registeringCard);
 			}));
 			return toRegisterResponse(activeCard, cardProduct);
