@@ -7,5 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CardBenefitTierRepository extends JpaRepository<CardBenefitTier, Long> {
 
+	boolean existsByTierIdAndBenefitId(Long tierId, Long benefitId);
+
 	List<CardBenefitTier> findByBenefitIdInOrderByMinPrevMonthUsageAsc(Collection<Long> benefitIds);
 }
