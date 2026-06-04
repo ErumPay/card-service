@@ -9,6 +9,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CardBenefitUsageRepository extends JpaRepository<CardBenefitUsage, Long> {
 
+	List<CardBenefitUsage> findByPaymentIdAndCardId(
+		Long paymentId,
+		Long cardId
+	);
+
 	List<CardBenefitUsage> findByUserIdAndCardIdInAndBenefitIdInAndStatusAndApprovedAtGreaterThanEqualAndApprovedAtLessThan(
 		Long userId,
 		Collection<Long> cardIds,

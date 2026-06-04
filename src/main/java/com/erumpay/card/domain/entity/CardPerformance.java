@@ -52,4 +52,23 @@ public class CardPerformance {
 
 	@Column(name = "updated_at", insertable = false, updatable = false)
 	private LocalDateTime updatedAt;
+
+	public static CardPerformance create(Long userId, Long cardId, String yearMonth, Long amount) {
+		CardPerformance performance = new CardPerformance();
+		performance.userId = userId;
+		performance.cardId = cardId;
+		performance.yearMonth = yearMonth;
+		performance.amount = amount;
+		return performance;
+	}
+
+	public void increase(Long amount) {
+		this.amount += amount;
+	}
+
+	public boolean decreaseWithFloor(Long amount) {
+		boolean clamped = this.amount < amount;
+		this.amount = clamped ? 0L : this.amount - amount;
+		return clamped;
+	}
 }

@@ -6,7 +6,10 @@ import com.erumpay.card.dto.InternalBillingKeysResponse;
 import com.erumpay.card.dto.InternalDeactivateCardsResponse;
 import com.erumpay.card.dto.InternalDefaultCardResponse;
 import com.erumpay.card.dto.InternalRecommendationSourceResponse;
+import com.erumpay.card.dto.PaymentUsageEventRequest;
+import com.erumpay.card.dto.PaymentUsageEventResponse;
 import com.erumpay.card.service.InternalCardService;
+import com.erumpay.card.service.PaymentUsageEventService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class InternalCardController {
 
 	private final InternalCardService internalCardService;
+	private final PaymentUsageEventService paymentUsageEventService;
 
 	@GetMapping("/{cardId}/billing-key")
 	public ResponseEntity<InternalBillingKeyResponse> getBillingKey(
@@ -57,5 +61,13 @@ public class InternalCardController {
 	@PostMapping("/users/{userId}/deactivate-all")
 	public ResponseEntity<InternalDeactivateCardsResponse> deactivateAll(@PathVariable Long userId) {
 		return ResponseEntity.ok(internalCardService.deactivateAll(userId));
+	}
+
+	@PostMapping("/users/{userId}/payment-usage-events")
+	public ResponseEntity<PaymentUsageEventResponse> applyPaymentUsageEvent(
+		@PathVariable Long userId,
+		@RequestBody @Valid PaymentUsageEventRequest request
+	) {
+		return ResponseEntity.ok(paymentUsageEventService.apply(userId, request));
 	}
 }

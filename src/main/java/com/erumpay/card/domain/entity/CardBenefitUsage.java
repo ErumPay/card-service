@@ -61,4 +61,36 @@ public class CardBenefitUsage {
 
 	@Column(name = "updated_at", insertable = false, updatable = false)
 	private LocalDateTime updatedAt;
+
+	public static CardBenefitUsage approved(
+		Long paymentId,
+		Long userId,
+		Long cardId,
+		Long benefitId,
+		Long tierId,
+		Integer approvedAmount,
+		Integer benefitAmount,
+		LocalDateTime approvedAt
+	) {
+		CardBenefitUsage usage = new CardBenefitUsage();
+		usage.paymentId = paymentId;
+		usage.userId = userId;
+		usage.cardId = cardId;
+		usage.benefitId = benefitId;
+		usage.tierId = tierId;
+		usage.approvedAmount = approvedAmount;
+		usage.benefitAmount = benefitAmount;
+		usage.approvedAt = approvedAt;
+		usage.status = CardBenefitUsageStatus.APPROVED;
+		return usage;
+	}
+
+	public boolean cancel(LocalDateTime canceledAt) {
+		if (status == CardBenefitUsageStatus.CANCELED) {
+			return false;
+		}
+		this.status = CardBenefitUsageStatus.CANCELED;
+		this.canceledAt = canceledAt;
+		return true;
+	}
 }
