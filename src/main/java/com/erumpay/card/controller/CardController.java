@@ -9,6 +9,8 @@ import com.erumpay.card.dto.CardRegisterRequest;
 import com.erumpay.card.dto.CardRegisterResponse;
 import com.erumpay.card.dto.CardResponse;
 import com.erumpay.card.dto.PaymentAvailabilityResponse;
+import com.erumpay.card.exception.AuthorizationRequiredException;
+import com.erumpay.card.exception.InvalidRequestException;
 import com.erumpay.card.service.CardBinValidationService;
 import com.erumpay.card.service.CardManagementService;
 import com.erumpay.card.service.CardPerformanceBenefitService;
@@ -24,8 +26,9 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -33,16 +36,21 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/cards")
 public class CardController {
 
+	private static final String USER_ID_HEADER = "X-User-Id";
+
 	private final CardRegistrationService cardRegistrationService;
 	private final CardManagementService cardManagementService;
 	private final CardBinValidationService cardBinValidationService;
 	private final CardPerformanceBenefitService cardPerformanceBenefitService;
 
 	@PostMapping
-	public ResponseEntity<CardRegisterResponse> register(@Valid @RequestBody CardRegisterRequest request) {
+	public ResponseEntity<CardRegisterResponse> register(
+		@RequestHeader(value = USER_ID_HEADER, required = false) String userIdHeader,
+		@Valid @RequestBody CardRegisterRequest request
+	) {
 		return ResponseEntity
 			.status(HttpStatus.CREATED)
-			.body(cardRegistrationService.register(request));
+			.body(cardRegistrationService.register(requireUserId(userIdHeader), request));
 	}
 
 	@PostMapping("/bin/validate")
@@ -51,64 +59,101 @@ public class CardController {
 	}
 
 	@GetMapping
-	public ResponseEntity<List<CardResponse>> getCards(@RequestParam Long userId) {
-		return ResponseEntity.ok(cardManagementService.getCards(userId));
+	public ResponseEntity<List<CardResponse>> getCards(
+		@RequestHeader(value = USER_ID_HEADER, required = false) String userIdHeader
+	) {
+		return ResponseEntity.ok(cardManagementService.getCards(requireUserId(userIdHeader)));
 	}
 
 	@GetMapping("/{cardId}")
-	public ResponseEntity<CardResponse> getCard(@PathVariable Long cardId, @RequestParam Long userId) {
-		return ResponseEntity.ok(cardManagementService.getCard(userId, cardId));
+	public ResponseEntity<CardResponse> getCard(
+		@PathVariable Long cardId,
+		@RequestHeader(value = USER_ID_HEADER, required = false) String userIdHeader
+	) {
+		return ResponseEntity.ok(cardManagementService.getCard(requireUserId(userIdHeader), cardId));
 	}
 
 	@GetMapping("/{cardId}/performance")
 	public ResponseEntity<CardPerformanceResponse> getPerformance(
 		@PathVariable Long cardId,
-		@RequestParam Long userId,
+		@RequestHeader(value = USER_ID_HEADER, required = false) String userIdHeader,
 		@RequestParam String yearMonth
 	) {
-		return ResponseEntity.ok(cardPerformanceBenefitService.getPerformance(userId, cardId, yearMonth));
+		return ResponseEntity.ok(cardPerformanceBenefitService.getPerformance(
+			requireUserId(userIdHeader),
+			cardId,
+			yearMonth
+		));
 	}
 
 	@GetMapping("/{cardId}/benefits")
 	public ResponseEntity<List<CardBenefitResponse>> getBenefits(
 		@PathVariable Long cardId,
-		@RequestParam Long userId
+		@RequestHeader(value = USER_ID_HEADER, required = false) String userIdHeader
 	) {
-		return ResponseEntity.ok(cardPerformanceBenefitService.getBenefits(userId, cardId));
+		return ResponseEntity.ok(cardPerformanceBenefitService.getBenefits(requireUserId(userIdHeader), cardId));
 	}
 
 	@PatchMapping("/{cardId}/alias")
 	public ResponseEntity<Void> updateAlias(
 		@PathVariable Long cardId,
-		@RequestParam Long userId,
+		@RequestHeader(value = USER_ID_HEADER, required = false) String userIdHeader,
 		@Valid @RequestBody CardAliasUpdateRequest request
 	) {
-		cardManagementService.updateAlias(userId, cardId, request);
+		cardManagementService.updateAlias(requireUserId(userIdHeader), cardId, request);
 		return ResponseEntity.noContent().build();
 	}
 
 	@PatchMapping("/{cardId}/default")
-	public ResponseEntity<Void> setDefault(@PathVariable Long cardId, @RequestParam Long userId) {
-		cardManagementService.setDefault(userId, cardId);
+	public ResponseEntity<Void> setDefault(
+		@PathVariable Long cardId,
+		@RequestHeader(value = USER_ID_HEADER, required = false) String userIdHeader
+	) {
+		cardManagementService.setDefault(requireUserId(userIdHeader), cardId);
 		return ResponseEntity.noContent().build();
 	}
 
 	@DeleteMapping("/{cardId}")
-	public ResponseEntity<Void> deleteCard(@PathVariable Long cardId, @RequestParam Long userId) {
-		cardManagementService.deleteCard(userId, cardId);
+	public ResponseEntity<Void> deleteCard(
+		@PathVariable Long cardId,
+		@RequestHeader(value = USER_ID_HEADER, required = false) String userIdHeader
+	) {
+		cardManagementService.deleteCard(requireUserId(userIdHeader), cardId);
 		return ResponseEntity.noContent().build();
 	}
 
 	@GetMapping("/payment-availability")
-	public ResponseEntity<PaymentAvailabilityResponse> checkUserPaymentAvailability(@RequestParam Long userId) {
-		return ResponseEntity.ok(cardManagementService.checkUserPaymentAvailability(userId));
+	public ResponseEntity<PaymentAvailabilityResponse> checkUserPaymentAvailability(
+		@RequestHeader(value = USER_ID_HEADER, required = false) String userIdHeader
+	) {
+		return ResponseEntity.ok(cardManagementService.checkUserPaymentAvailability(
+			requireUserId(userIdHeader)
+		));
 	}
 
 	@GetMapping("/{cardId}/payment-availability")
 	public ResponseEntity<PaymentAvailabilityResponse> checkCardPaymentAvailability(
 		@PathVariable Long cardId,
-		@RequestParam Long userId
+		@RequestHeader(value = USER_ID_HEADER, required = false) String userIdHeader
 	) {
-		return ResponseEntity.ok(cardManagementService.checkCardPaymentAvailability(userId, cardId));
+		return ResponseEntity.ok(cardManagementService.checkCardPaymentAvailability(
+			requireUserId(userIdHeader),
+			cardId
+		));
+	}
+
+	private Long requireUserId(String userIdHeader) {
+		if (userIdHeader == null || userIdHeader.isBlank()) {
+			throw new AuthorizationRequiredException();
+		}
+		try {
+			Long userId = Long.valueOf(userIdHeader.trim());
+			if (userId <= 0) {
+				throw new InvalidRequestException();
+			}
+			return userId;
+		} catch (NumberFormatException exception) {
+			throw new InvalidRequestException(exception);
+		}
 	}
 }
