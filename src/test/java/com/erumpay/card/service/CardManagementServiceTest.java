@@ -20,6 +20,7 @@ import com.erumpay.card.dto.CardResponse;
 import com.erumpay.card.dto.PaymentAvailabilityResponse;
 import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
 import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
+import com.erumpay.card.event.CardNotificationEventPublisher;
 import com.erumpay.card.exception.BillingKeyDeactivationFailedException;
 import com.erumpay.card.exception.BillingKeyNotFoundException;
 import com.erumpay.card.exception.BillingKeyServiceUnavailableException;
@@ -65,6 +66,9 @@ class CardManagementServiceTest {
 	@Mock
 	private BillingKeyServiceClient billingKeyServiceClient;
 
+	@Mock
+	private CardNotificationEventPublisher cardNotificationEventPublisher;
+
 	private BillingKeyCryptoService billingKeyCryptoService;
 
 	private CardManagementService cardManagementService;
@@ -77,6 +81,7 @@ class CardManagementServiceTest {
 			cardProductRepository,
 			billingKeyServiceClient,
 			billingKeyCryptoService,
+			cardNotificationEventPublisher,
 			transactionTemplate(),
 			FIXED_CLOCK
 		);
@@ -181,6 +186,7 @@ class CardManagementServiceTest {
 		CardRegistered replacement = card(11L, 1L, 101L, CardStatus.ACTIVE, false, "billing-key");
 
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		stubProduct(100L, "LOCA 365 카드");
 		when(billingKeyServiceClient.delete(any())).thenReturn(successDeleteResponse(10L, "billing-key"));
 		when(cardRegisteredRepository.findFirstByUserIdAndStatusAndCardIdNotOrderByCreatedAtAscCardIdAsc(
 			1L,
@@ -197,6 +203,7 @@ class CardManagementServiceTest {
 		assertThat(requestCaptor.getValue().billingKey()).isEqualTo("billing-key");
 		inOrder.verify(target).delete(any(LocalDateTime.class));
 		inOrder.verify(replacement).markDefault();
+		verify(cardNotificationEventPublisher).publishDeleted(1L, 10L, "LOCA 365 카드");
 	}
 
 	@Test
@@ -204,6 +211,7 @@ class CardManagementServiceTest {
 		CardRegistered target = card(10L, 1L, 100L, CardStatus.PAUSED, false, "billing-key");
 
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		stubProduct(100L, "LOCA 365 카드");
 		when(billingKeyServiceClient.delete(any())).thenReturn(successDeleteResponse(10L, "billing-key"));
 
 		cardManagementService.deleteCard(1L, 10L);
@@ -212,6 +220,7 @@ class CardManagementServiceTest {
 		verify(target).delete(any(LocalDateTime.class));
 		verify(cardRegisteredRepository, never())
 			.findFirstByUserIdAndStatusAndCardIdNotOrderByCreatedAtAscCardIdAsc(any(), any(), any());
+		verify(cardNotificationEventPublisher).publishDeleted(1L, 10L, "LOCA 365 카드");
 	}
 
 	@Test
@@ -226,6 +235,7 @@ class CardManagementServiceTest {
 		);
 
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		stubProduct(100L, "LOCA 365 카드");
 		when(billingKeyServiceClient.delete(any()))
 			.thenReturn(new BillingKeyDeleteResponse(10L, "billing-key", "BIL-KEY-100", "OK"));
 
@@ -233,6 +243,7 @@ class CardManagementServiceTest {
 
 		verify(billingKeyServiceClient).delete(any());
 		verify(target).delete(any(LocalDateTime.class));
+		verify(cardNotificationEventPublisher).publishDeleted(1L, 10L, "LOCA 365 카드");
 	}
 
 	@Test
@@ -246,6 +257,7 @@ class CardManagementServiceTest {
 		verify(target, never()).delete(any());
 		verify(cardRegisteredRepository, never())
 			.findFirstByUserIdAndStatusAndCardIdNotOrderByCreatedAtAscCardIdAsc(any(), any(), any());
+		verify(cardNotificationEventPublisher, never()).publishDeleted(any(), any(), any());
 	}
 
 	@Test
@@ -258,6 +270,7 @@ class CardManagementServiceTest {
 
 		verify(billingKeyServiceClient, never()).delete(any());
 		verify(target, never()).delete(any());
+		verify(cardNotificationEventPublisher, never()).publishDeleted(any(), any(), any());
 	}
 
 	@Test
@@ -270,12 +283,14 @@ class CardManagementServiceTest {
 
 		verify(billingKeyServiceClient, never()).delete(any());
 		verify(target, never()).delete(any());
+		verify(cardNotificationEventPublisher, never()).publishDeleted(any(), any(), any());
 	}
 
 	@Test
 	void deleteCardFailsWithoutSoftDeleteWhenBillingKeyDeleteReturnsNonSuccess() {
 		CardRegistered target = card(10L, 1L, 100L, CardStatus.ACTIVE, false, "billing-key");
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		stubProduct(100L, "LOCA 365 카드");
 		when(billingKeyServiceClient.delete(any()))
 			.thenReturn(new BillingKeyDeleteResponse(10L, "billing-key", "101", "not found"));
 
@@ -283,6 +298,7 @@ class CardManagementServiceTest {
 			.isInstanceOf(BillingKeyDeactivationFailedException.class);
 
 		verify(target, never()).delete(any());
+		verify(cardNotificationEventPublisher, never()).publishDeleted(any(), any(), any());
 	}
 
 	@Test
@@ -291,6 +307,7 @@ class CardManagementServiceTest {
 		FeignException notFound = mock(FeignException.class);
 
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		stubProduct(100L, "LOCA 365 카드");
 		when(notFound.status()).thenReturn(404);
 		when(billingKeyServiceClient.delete(any())).thenThrow(notFound);
 
@@ -298,6 +315,7 @@ class CardManagementServiceTest {
 			.isInstanceOf(BillingKeyDeactivationFailedException.class);
 
 		verify(target, never()).delete(any());
+		verify(cardNotificationEventPublisher, never()).publishDeleted(any(), any(), any());
 	}
 
 	@Test
@@ -306,6 +324,7 @@ class CardManagementServiceTest {
 		FeignException unavailable = mock(FeignException.class);
 
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		stubProduct(100L, "LOCA 365 카드");
 		when(unavailable.status()).thenReturn(503);
 		when(billingKeyServiceClient.delete(any())).thenThrow(unavailable);
 
@@ -313,6 +332,7 @@ class CardManagementServiceTest {
 			.isInstanceOf(BillingKeyServiceUnavailableException.class);
 
 		verify(target, never()).delete(any());
+		verify(cardNotificationEventPublisher, never()).publishDeleted(any(), any(), any());
 	}
 
 	@Test
@@ -448,6 +468,11 @@ class CardManagementServiceTest {
 		lenient().when(product.getCardCompany()).thenReturn(cardCompany);
 		lenient().when(product.getCardName()).thenReturn(cardName);
 		return product;
+	}
+
+	private void stubProduct(Long cardProductId, String cardName) {
+		CardProduct product = product(cardProductId, "롯데카드", cardName);
+		when(cardProductRepository.findById(cardProductId)).thenReturn(Optional.of(product));
 	}
 
 	private BillingKeyDeleteResponse successDeleteResponse(Long payCardId, String billingKey) {
