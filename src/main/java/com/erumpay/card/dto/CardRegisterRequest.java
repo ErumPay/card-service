@@ -1,7 +1,6 @@
 package com.erumpay.card.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -16,9 +15,6 @@ import lombok.ToString;
 @AllArgsConstructor
 @ToString
 public class CardRegisterRequest {
-
-	@NotNull(message = "회원 식별자는 필수입니다.")
-	private Long userId;
 
 	@ToString.Exclude
 	@NotBlank(message = "카드번호는 필수입니다.")

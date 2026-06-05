@@ -98,7 +98,7 @@ class CardRegistrationServiceTest {
 	void registerFailsWhenExpiryYmHasInvalidMonth() {
 		CardRegisterRequest request = request("8000001234567890", "202613");
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(InvalidExpiryYmException.class);
 
 		verify(cardProductRepository, never()).findByMockBin(any());
@@ -110,7 +110,7 @@ class CardRegistrationServiceTest {
 	void registerFailsWhenExpiryYmIsPastMonth() {
 		CardRegisterRequest request = request("8000001234567890", "202504");
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(InvalidExpiryYmException.class);
 
 		verify(cardProductRepository, never()).findByMockBin(any());
@@ -123,7 +123,7 @@ class CardRegistrationServiceTest {
 		CardRegisterRequest request = request("8000001234567890");
 		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(CardProductNotFoundException.class);
 
 		verify(cardRegisteredRepository, never()).existsByUserIdAndCardProductIdAndStatusIn(any(), any(), any());
@@ -139,7 +139,7 @@ class CardRegistrationServiceTest {
 		when(cardRegisteredRepository.existsByUserIdAndCardProductIdAndStatusIn(eq(1L), eq(10L), any()))
 			.thenReturn(true);
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(DuplicateCardRegistrationException.class);
 
 		verify(authServiceClient, never()).getUserInfo(any());
@@ -152,7 +152,7 @@ class CardRegistrationServiceTest {
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
 
-		CardRegisterResponse response = cardRegistrationService.register(request);
+		CardRegisterResponse response = cardRegistrationService.register(1L, request);
 
 		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
 		ArgumentCaptor<Collection<CardStatus>> statusesCaptor = ArgumentCaptor.forClass(Collection.class);
@@ -176,7 +176,7 @@ class CardRegistrationServiceTest {
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
 
-		CardRegisterResponse response = cardRegistrationService.register(request);
+		CardRegisterResponse response = cardRegistrationService.register(1L, request);
 
 		assertThat(response.getCardId()).isEqualTo(100L);
 		assertThat(response.getCardProductId()).isEqualTo(10L);
@@ -210,7 +210,7 @@ class CardRegistrationServiceTest {
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("BIL-KEY-100", "billing-key", "8000-****-****-1234"));
 
-		CardRegisterResponse response = cardRegistrationService.register(request);
+		CardRegisterResponse response = cardRegistrationService.register(1L, request);
 
 		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
 		assertThat(response.getMaskedNumber()).isEqualTo("8000-****-****-1234");
@@ -222,7 +222,7 @@ class CardRegistrationServiceTest {
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("102", "existing-billing-key", "8000-****-****-1234"));
 
-		CardRegisterResponse response = cardRegistrationService.register(request);
+		CardRegisterResponse response = cardRegistrationService.register(1L, request);
 
 		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
 		assertThat(response.getMaskedNumber()).isEqualTo("8000-****-****-1234");
@@ -237,7 +237,7 @@ class CardRegistrationServiceTest {
 			issueResponse("BIL-KEY-101", "existing-billing-key", "8000-****-****-1234")
 		);
 
-		CardRegisterResponse response = cardRegistrationService.register(request);
+		CardRegisterResponse response = cardRegistrationService.register(1L, request);
 
 		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
 		assertThat(response.getMaskedNumber()).isEqualTo("8000-****-****-1234");
@@ -250,7 +250,7 @@ class CardRegistrationServiceTest {
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
 		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "900101", "ACTIVE"));
 
-		cardRegistrationService.register(request);
+		cardRegistrationService.register(1L, request);
 
 		ArgumentCaptor<BillingKeyIssueRequest> issueRequestCaptor = ArgumentCaptor.forClass(BillingKeyIssueRequest.class);
 		verify(billingKeyServiceClient).issue(issueRequestCaptor.capture());
@@ -267,7 +267,7 @@ class CardRegistrationServiceTest {
 			.thenReturn(false);
 		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "", "ACTIVE"));
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(InvalidUserBirthDateException.class);
 
 		verify(cardRegisteredRepository, never()).save(any());
@@ -284,7 +284,7 @@ class CardRegistrationServiceTest {
 			.thenReturn(false);
 		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "19900101", "WITHDRAWN"));
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(UserNotActiveException.class);
 
 		verify(cardRegisteredRepository, never()).save(any());
@@ -297,7 +297,7 @@ class CardRegistrationServiceTest {
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("105", null, null));
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(BillingKeyIssuePendingException.class);
 
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
@@ -311,7 +311,7 @@ class CardRegistrationServiceTest {
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("BIL-KEY-102", null, null));
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(BillingKeyIssuePendingException.class);
 
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
@@ -325,7 +325,7 @@ class CardRegistrationServiceTest {
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("200", null, null));
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(BillingKeyIssueFailedException.class);
 
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
@@ -339,7 +339,7 @@ class CardRegistrationServiceTest {
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("100", " ", "8000-****-****-1234"));
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(BillingKeyIssueFailedException.class);
 
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
@@ -356,7 +356,7 @@ class CardRegistrationServiceTest {
 		when(badRequest.status()).thenReturn(400);
 		when(billingKeyServiceClient.issue(any())).thenThrow(badRequest);
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(BillingKeyIssueFailedException.class);
 
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
@@ -376,7 +376,7 @@ class CardRegistrationServiceTest {
 			.thenThrow(unavailable)
 			.thenThrow(unavailable);
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(BillingKeyIssueUnknownException.class);
 
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
@@ -394,7 +394,7 @@ class CardRegistrationServiceTest {
 			.thenThrow(new RuntimeException("temporary failure"))
 			.thenReturn(issueResponse("100", "billing-key", "8000-****-****-1234"));
 
-		CardRegisterResponse response = cardRegistrationService.register(request);
+		CardRegisterResponse response = cardRegistrationService.register(1L, request);
 
 		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
 		verify(billingKeyServiceClient, times(2)).issue(any());
@@ -411,7 +411,7 @@ class CardRegistrationServiceTest {
 		when(cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(1L, CardStatus.ACTIVE))
 			.thenReturn(Optional.of(currentDefault));
 
-		CardRegisterResponse response = cardRegistrationService.register(request);
+		CardRegisterResponse response = cardRegistrationService.register(1L, request);
 
 		assertThat(response.getIsDefault()).isTrue();
 		assertThat(currentDefault.isDefaultCard()).isFalse();
@@ -448,7 +448,7 @@ class CardRegistrationServiceTest {
 			return card;
 		});
 
-		assertThatThrownBy(() -> cardRegistrationService.register(request))
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
 			.isInstanceOf(CardRegistrationFailedException.class);
 
 		ArgumentCaptor<BillingKeyDeleteRequest> deleteRequestCaptor =
@@ -499,7 +499,6 @@ class CardRegistrationServiceTest {
 
 	private CardRegisterRequest request(String cardNumber, String expiryYm, Boolean isDefault) {
 		return new CardRegisterRequest(
-			1L,
 			cardNumber,
 			expiryYm,
 			"123",

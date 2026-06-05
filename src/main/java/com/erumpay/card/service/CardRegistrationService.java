@@ -67,16 +67,16 @@ public class CardRegistrationService {
 	private final Clock clock;
 
 	// [be] 이준혁 260521 1602 | 카드 등록 요청의 기본 검증, 상품 조회, 중복 등록 여부를 먼저 확인한다.
-	public CardRegisterResponse register(CardRegisterRequest request) {
+	public CardRegisterResponse register(Long userId, CardRegisterRequest request) {
 		validateExpiryYm(request.getExpiryYm());
 
 		CardProduct cardProduct = cardProductRepository.findByMockBin(request.mockBin())
 			.orElseThrow(CardProductNotFoundException::new);
 
-		validateDuplicateRegistration(request.getUserId(), cardProduct.getCardProductId());
+		validateDuplicateRegistration(userId, cardProduct.getCardProductId());
 
-		String billingBirthDate = findBillingBirthDate(request.getUserId());
-		CardRegistered registeringCard = createRegisteringCard(request, cardProduct.getCardProductId());
+		String billingBirthDate = findBillingBirthDate(userId);
+		CardRegistered registeringCard = createRegisteringCard(userId, request, cardProduct.getCardProductId());
 		BillingKeyIssueResponse issueResponse;
 		try {
 			issueResponse = issueBillingKey(registeringCard.getCardId(), request, billingBirthDate);
@@ -94,7 +94,7 @@ public class CardRegistrationService {
 			throw new BillingKeyIssueFailedException();
 		}
 
-		return activateRegisteredCard(request, cardProduct, registeringCard, issueResponse);
+		return activateRegisteredCard(userId, request, cardProduct, registeringCard, issueResponse);
 	}
 
 	// [be] 이준혁 260521 1602 | 유효기간이 yyyyMM 형식이고 현재 월보다 과거가 아닌지 확인한다.
@@ -160,10 +160,10 @@ public class CardRegistrationService {
 		throw new InvalidUserBirthDateException();
 	}
 
-	private CardRegistered createRegisteringCard(CardRegisterRequest request, Long cardProductId) {
+	private CardRegistered createRegisteringCard(Long userId, CardRegisterRequest request, Long cardProductId) {
 		return Objects.requireNonNull(transactionTemplate.execute(status -> cardRegisteredRepository.save(
 			CardRegistered.registering(
-				request.getUserId(),
+				userId,
 				cardProductId,
 				request.normalizedCardAlias(),
 				request.getExpiryYm()
@@ -230,6 +230,7 @@ public class CardRegistrationService {
 	}
 
 	private CardRegisterResponse activateRegisteredCard(
+		Long userId,
 		CardRegisterRequest request,
 		CardProduct cardProduct,
 		CardRegistered registeringCard,
@@ -238,7 +239,7 @@ public class CardRegistrationService {
 		try {
 			CardRegistered activeCard = Objects.requireNonNull(transactionTemplate.execute(status -> {
 				Optional<CardRegistered> currentDefault = cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(
-					request.getUserId(),
+					userId,
 					CardStatus.ACTIVE
 				);
 				boolean shouldBeDefault = request.defaultRequested() || currentDefault.isEmpty();
