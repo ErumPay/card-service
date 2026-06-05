@@ -30,6 +30,10 @@ public class CardNotificationEventPublisher {
 	private String topic;
 
 	public void publishRegistered(Long userId, Long cardId, String cardName) {
+		userId = requireNonNull(userId, "userId");
+		cardId = requireNonNull(cardId, "cardId");
+		cardName = requireNonNull(cardName, "cardName");
+
 		publish(
 			new CardNotificationEventMessage(
 				eventId(cardId, "registered", userId),
@@ -45,6 +49,10 @@ public class CardNotificationEventPublisher {
 	}
 
 	public void publishDeleted(Long userId, Long cardId, String cardName) {
+		userId = requireNonNull(userId, "userId");
+		cardId = requireNonNull(cardId, "cardId");
+		cardName = requireNonNull(cardName, "cardName");
+
 		publish(
 			new CardNotificationEventMessage(
 				eventId(cardId, "deleted", userId),
@@ -102,5 +110,12 @@ public class CardNotificationEventPublisher {
 
 	private String correlationId() {
 		return "card_" + UUID.randomUUID();
+	}
+
+	private <T> T requireNonNull(T value, String fieldName) {
+		if (value == null) {
+			throw new IllegalArgumentException(fieldName + " must not be null");
+		}
+		return value;
 	}
 }

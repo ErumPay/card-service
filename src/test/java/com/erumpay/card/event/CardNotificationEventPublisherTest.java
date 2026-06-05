@@ -2,8 +2,10 @@ package com.erumpay.card.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -87,6 +89,36 @@ class CardNotificationEventPublisherTest {
 		assertThat(payload.get("eventType").asText()).isEqualTo("CARD_DELETED");
 		assertThat(payload.get("title").asText()).isEqualTo("카드가 삭제되었습니다.");
 		assertThat(payload.get("content").asText()).isEqualTo("KB국민 My WE:SH 카드가 정상적으로 삭제되었습니다.");
+	}
+
+	@Test
+	void publishRegisteredRejectsNullInputs() {
+		assertThatThrownBy(() -> publisher.publishRegistered(null, 3001L, "KB card"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("userId must not be null");
+		assertThatThrownBy(() -> publisher.publishRegistered(101L, null, "KB card"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("cardId must not be null");
+		assertThatThrownBy(() -> publisher.publishRegistered(101L, 3001L, null))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("cardName must not be null");
+
+		verifyNoInteractions(kafkaTemplate);
+	}
+
+	@Test
+	void publishDeletedRejectsNullInputs() {
+		assertThatThrownBy(() -> publisher.publishDeleted(null, 3001L, "KB card"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("userId must not be null");
+		assertThatThrownBy(() -> publisher.publishDeleted(101L, null, "KB card"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("cardId must not be null");
+		assertThatThrownBy(() -> publisher.publishDeleted(101L, 3001L, null))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("cardName must not be null");
+
+		verifyNoInteractions(kafkaTemplate);
 	}
 
 	@Test
