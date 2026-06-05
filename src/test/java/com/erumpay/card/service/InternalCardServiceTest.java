@@ -442,7 +442,7 @@ class InternalCardServiceTest {
 		when(cardRegisteredRepository.findByUserIdAndStatusNotOrderByCreatedAtAscCardIdAsc(1L, CardStatus.DELETED))
 			.thenReturn(List.of(activeCard, pausedCard, registeringCard));
 		when(billingKeyServiceClient.delete(any()))
-			.thenReturn(deleteResponse(10L, "100"))
+			.thenReturn(deleteResponse(10L, "BIL-KEY-100"))
 			.thenReturn(deleteResponse(11L, "100"));
 
 		InternalDeactivateCardsResponse response = internalCardService.deactivateAll(1L);

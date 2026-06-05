@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +37,7 @@ public class CardManagementService {
 	private static final String CARD_NOT_FOUND = "CARD_NOT_FOUND";
 	private static final String CARD_NOT_ACTIVE = "CARD_NOT_ACTIVE";
 	private static final String BILLING_KEY_NOT_FOUND = "BILLING_KEY_NOT_FOUND";
-	private static final String BILLING_KEY_DELETE_SUCCESS = "100";
+	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
 	private static final List<CardStatus> VISIBLE_CARD_STATUSES = List.of(
 		CardStatus.ACTIVE,
 		CardStatus.PAUSED,
@@ -92,6 +93,7 @@ public class CardManagementService {
 
 		cardRegisteredRepository.findByUserIdAndDefaultCardTrueAndStatus(userId, CardStatus.ACTIVE)
 			.ifPresent(CardRegistered::unsetDefault);
+		cardRegisteredRepository.flush();
 		targetCard.markDefault();
 	}
 
@@ -126,7 +128,7 @@ public class CardManagementService {
 			throw new BillingKeyServiceUnavailableException(exception);
 		}
 
-		if (response == null || !BILLING_KEY_DELETE_SUCCESS.equals(response.responseCode())) {
+		if (response == null || !BILLING_KEY_DELETE_SUCCESS_CODES.contains(response.responseCode())) {
 			throw new BillingKeyDeactivationFailedException();
 		}
 	}

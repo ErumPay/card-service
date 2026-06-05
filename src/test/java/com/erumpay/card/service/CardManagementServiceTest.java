@@ -162,8 +162,9 @@ class CardManagementServiceTest {
 
 		cardManagementService.setDefault(1L, 10L);
 
-		InOrder inOrder = inOrder(currentDefault, target);
+		InOrder inOrder = inOrder(currentDefault, cardRegisteredRepository, target);
 		inOrder.verify(currentDefault).unsetDefault();
+		inOrder.verify(cardRegisteredRepository).flush();
 		inOrder.verify(target).markDefault();
 	}
 
@@ -211,6 +212,27 @@ class CardManagementServiceTest {
 		verify(target).delete(any(LocalDateTime.class));
 		verify(cardRegisteredRepository, never())
 			.findFirstByUserIdAndStatusAndCardIdNotOrderByCreatedAtAscCardIdAsc(any(), any(), any());
+	}
+
+	@Test
+	void deleteCardAcceptsTeamBillingKeyDeleteSuccessCode() {
+		CardRegistered target = card(
+			10L,
+			1L,
+			100L,
+			CardStatus.ACTIVE,
+			false,
+			billingKeyCryptoService.encrypt("billing-key")
+		);
+
+		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		when(billingKeyServiceClient.delete(any()))
+			.thenReturn(new BillingKeyDeleteResponse(10L, "billing-key", "BIL-KEY-100", "OK"));
+
+		cardManagementService.deleteCard(1L, 10L);
+
+		verify(billingKeyServiceClient).delete(any());
+		verify(target).delete(any(LocalDateTime.class));
 	}
 
 	@Test

@@ -295,7 +295,7 @@ class PaymentUsageEventServiceTest {
 
 		assertThatThrownBy(() -> paymentUsageEventService.apply(2L, request))
 			.isInstanceOf(InvalidPaymentUsageEventRequestException.class)
-			.hasMessage("approvedAt is required for canceled event");
+			.hasMessage("결제 사용량 이벤트 요청이 올바르지 않습니다.");
 
 		verify(cardRegisteredRepository, never()).findByUserIdAndCardIdIn(any(), any());
 	}

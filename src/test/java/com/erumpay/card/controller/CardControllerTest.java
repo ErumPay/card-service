@@ -51,10 +51,18 @@ class CardControllerTest {
 	void validateBinReturnsBadRequestWhenCardNumberIsNotSixteenDigits() throws Exception {
 		mockMvc.perform(post("/api/v1/cards/bin/validate")
 				.contentType(MediaType.APPLICATION_JSON)
+				.header("X-Correlation-Id", "test-correlation-id")
 				.content("{\"cardNumber\":\"800012345678123\"}"))
 			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
-			.andExpect(jsonPath("$.message").value("카드번호 형식 오류"));
+			.andExpect(jsonPath("$.status").value(400))
+			.andExpect(jsonPath("$.error").value("BAD_REQUEST"))
+			.andExpect(jsonPath("$.code").value("CARD-REQ-001"))
+			.andExpect(jsonPath("$.reason").value("INVALID_REQUEST"))
+			.andExpect(jsonPath("$.message").value("잘못된 요청입니다."))
+			.andExpect(jsonPath("$.details[0].field").value("cardNumber"))
+			.andExpect(jsonPath("$.details[0].message").value("카드번호 형식 오류"))
+			.andExpect(jsonPath("$.correlationId").value("test-correlation-id"))
+			.andExpect(jsonPath("$.path").value("/api/v1/cards/bin/validate"));
 
 		verify(cardBinValidationService, never()).validate(any());
 	}

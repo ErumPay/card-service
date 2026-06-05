@@ -1,29 +1,42 @@
 package com.erumpay.card.exception;
 
-import org.springframework.http.HttpStatus;
-
 public abstract class CardServiceException extends RuntimeException {
 
-	private final HttpStatus status;
-	private final String code;
+	private final ErrorCode errorCode;
 
-	protected CardServiceException(HttpStatus status, String code, String message) {
+	protected CardServiceException(ErrorCode errorCode) {
+		super(errorCode.getMessage());
+		this.errorCode = errorCode;
+	}
+
+	protected CardServiceException(ErrorCode errorCode, String message) {
 		super(message);
-		this.status = status;
-		this.code = code;
+		this.errorCode = errorCode;
 	}
 
-	protected CardServiceException(HttpStatus status, String code, String message, Throwable cause) {
+	protected CardServiceException(ErrorCode errorCode, String message, Throwable cause) {
 		super(message, cause);
-		this.status = status;
-		this.code = code;
+		this.errorCode = errorCode;
 	}
 
-	public HttpStatus getStatus() {
-		return status;
+	protected CardServiceException(ErrorCode errorCode, Throwable cause) {
+		super(errorCode.getMessage(), cause);
+		this.errorCode = errorCode;
+	}
+
+	public ErrorCode getErrorCode() {
+		return errorCode;
+	}
+
+	public org.springframework.http.HttpStatus getStatus() {
+		return errorCode.getStatus();
 	}
 
 	public String getCode() {
-		return code;
+		return errorCode.getCode();
+	}
+
+	public String getReason() {
+		return errorCode.getReason();
 	}
 }

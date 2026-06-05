@@ -58,7 +58,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RequiredArgsConstructor
 public class InternalCardService {
 
-	private static final String BILLING_KEY_DELETE_SUCCESS = "100";
+	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
 	private static final String BILLING_KEY_NOT_FOUND_REASON = "BILLING_KEY_NOT_FOUND";
 	private static final int HTTP_NOT_FOUND = 404;
 
@@ -278,7 +278,7 @@ public class InternalCardService {
 			throw new BillingKeyServiceUnavailableException(exception);
 		}
 
-		if (response == null || !BILLING_KEY_DELETE_SUCCESS.equals(response.responseCode())) {
+		if (response == null || !BILLING_KEY_DELETE_SUCCESS_CODES.contains(response.responseCode())) {
 			throw new BillingKeyDeactivationFailedException();
 		}
 	}
