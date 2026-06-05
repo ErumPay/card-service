@@ -12,6 +12,7 @@ import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
 import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
 import com.erumpay.card.dto.client.BillingKeyIssueRequest;
 import com.erumpay.card.dto.client.BillingKeyIssueResponse;
+import com.erumpay.card.event.CardNotificationEventPublisher;
 import com.erumpay.card.exception.AuthServiceUnavailableException;
 import com.erumpay.card.exception.BillingKeyIssueFailedException;
 import com.erumpay.card.exception.BillingKeyIssuePendingException;
@@ -63,6 +64,7 @@ public class CardRegistrationService {
 	private final AuthServiceClient authServiceClient;
 	private final BillingKeyServiceClient billingKeyServiceClient;
 	private final BillingKeyCryptoService billingKeyCryptoService;
+	private final CardNotificationEventPublisher cardNotificationEventPublisher;
 	private final TransactionTemplate transactionTemplate;
 	private final Clock clock;
 
@@ -94,7 +96,15 @@ public class CardRegistrationService {
 			throw new BillingKeyIssueFailedException();
 		}
 
-		return activateRegisteredCard(userId, request, cardProduct, registeringCard, issueResponse);
+		CardRegisterResponse response = activateRegisteredCard(
+			userId,
+			request,
+			cardProduct,
+			registeringCard,
+			issueResponse
+		);
+		cardNotificationEventPublisher.publishRegistered(userId, response.getCardId(), cardProduct.getCardName());
+		return response;
 	}
 
 	// [be] 이준혁 260521 1602 | 유효기간이 yyyyMM 형식이고 현재 월보다 과거가 아닌지 확인한다.

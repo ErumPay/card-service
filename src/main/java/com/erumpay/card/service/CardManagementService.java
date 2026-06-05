@@ -9,6 +9,7 @@ import com.erumpay.card.dto.CardResponse;
 import com.erumpay.card.dto.PaymentAvailabilityResponse;
 import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
 import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
+import com.erumpay.card.event.CardNotificationEventPublisher;
 import com.erumpay.card.exception.BillingKeyDeactivationFailedException;
 import com.erumpay.card.exception.BillingKeyNotFoundException;
 import com.erumpay.card.exception.BillingKeyServiceUnavailableException;
@@ -48,6 +49,7 @@ public class CardManagementService {
 	private final CardProductRepository cardProductRepository;
 	private final BillingKeyServiceClient billingKeyServiceClient;
 	private final BillingKeyCryptoService billingKeyCryptoService;
+	private final CardNotificationEventPublisher cardNotificationEventPublisher;
 	private final TransactionTemplate transactionTemplate;
 	private final Clock clock;
 
@@ -110,9 +112,11 @@ public class CardManagementService {
 			throw new BillingKeyNotFoundException();
 		}
 
+		String cardName = findProductById(card.getCardProductId()).getCardName();
 		String billingKey = billingKeyCryptoService.decrypt(card.getEncryptedBillingKey());
 		deactivateBillingKey(card.getCardId(), billingKey);
 		softDeleteCard(userId, cardId);
+		cardNotificationEventPublisher.publishDeleted(userId, cardId, cardName);
 	}
 
 	private void deactivateBillingKey(Long payCardId, String billingKey) {

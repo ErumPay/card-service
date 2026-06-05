@@ -25,6 +25,7 @@ import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
 import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
 import com.erumpay.card.dto.client.BillingKeyIssueRequest;
 import com.erumpay.card.dto.client.BillingKeyIssueResponse;
+import com.erumpay.card.event.CardNotificationEventPublisher;
 import com.erumpay.card.exception.BillingKeyIssueFailedException;
 import com.erumpay.card.exception.BillingKeyIssuePendingException;
 import com.erumpay.card.exception.BillingKeyIssueUnknownException;
@@ -76,6 +77,9 @@ class CardRegistrationServiceTest {
 	@Mock
 	private BillingKeyServiceClient billingKeyServiceClient;
 
+	@Mock
+	private CardNotificationEventPublisher cardNotificationEventPublisher;
+
 	private BillingKeyCryptoService billingKeyCryptoService;
 
 	private CardRegistrationService cardRegistrationService;
@@ -89,6 +93,7 @@ class CardRegistrationServiceTest {
 			authServiceClient,
 			billingKeyServiceClient,
 			billingKeyCryptoService,
+			cardNotificationEventPublisher,
 			transactionTemplate(),
 			FIXED_CLOCK
 		);
@@ -202,6 +207,7 @@ class CardRegistrationServiceTest {
 		assertThat(storedBillingKey).startsWith("enc:v1:");
 		assertThat(storedBillingKey).isNotEqualTo("billing-key");
 		assertThat(billingKeyCryptoService.decrypt(storedBillingKey)).isEqualTo("billing-key");
+		verify(cardNotificationEventPublisher).publishRegistered(1L, 100L, "LOCA 365");
 	}
 
 	@Test
@@ -303,6 +309,7 @@ class CardRegistrationServiceTest {
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
 		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
 		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
+		verify(cardNotificationEventPublisher, never()).publishRegistered(any(), any(), any());
 	}
 
 	@Test
@@ -317,6 +324,7 @@ class CardRegistrationServiceTest {
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
 		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
 		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
+		verify(cardNotificationEventPublisher, never()).publishRegistered(any(), any(), any());
 	}
 
 	@Test
@@ -331,6 +339,7 @@ class CardRegistrationServiceTest {
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
 		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
 		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
+		verify(cardNotificationEventPublisher, never()).publishRegistered(any(), any(), any());
 	}
 
 	@Test
@@ -456,6 +465,7 @@ class CardRegistrationServiceTest {
 		verify(billingKeyServiceClient).delete(deleteRequestCaptor.capture());
 		assertThat(deleteRequestCaptor.getValue().payCardId()).isEqualTo(100L);
 		assertThat(deleteRequestCaptor.getValue().billingKey()).isEqualTo("billing-key");
+		verify(cardNotificationEventPublisher, never()).publishRegistered(any(), any(), any());
 	}
 
 	@Test
