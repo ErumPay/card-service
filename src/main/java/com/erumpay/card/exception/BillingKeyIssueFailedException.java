@@ -1,14 +1,12 @@
 package com.erumpay.card.exception;
 
-import org.springframework.http.HttpStatus;
-
 public class BillingKeyIssueFailedException extends CardServiceException {
 
 	public BillingKeyIssueFailedException() {
-		super(HttpStatus.BAD_GATEWAY, "BILLING_KEY_ISSUE_FAILED", "빌링키 발급에 실패했습니다.");
+		super(ErrorCode.BILLING_KEY_ISSUE_FAILED);
 	}
 
 	public BillingKeyIssueFailedException(Throwable cause) {
-		super(HttpStatus.BAD_GATEWAY, "BILLING_KEY_ISSUE_FAILED", "빌링키 발급에 실패했습니다.", cause);
+		super(ErrorCode.BILLING_KEY_ISSUE_FAILED, cause);
 	}
 }

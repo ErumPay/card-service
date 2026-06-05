@@ -34,6 +34,7 @@ import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -46,10 +47,10 @@ public class CardRegistrationService {
 
 	private static final DateTimeFormatter EXPIRY_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
 	private static final String USER_STATUS_ACTIVE = "ACTIVE";
-	private static final String BILLING_KEY_ISSUE_SUCCESS = "100";
-	private static final String BILLING_KEY_ISSUE_ACTIVE_ECHO = "102";
-	private static final String BILLING_KEY_ISSUE_PENDING = "105";
-	private static final String BILLING_KEY_DELETE_SUCCESS = "100";
+	private static final Set<String> BILLING_KEY_ISSUE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
+	private static final Set<String> BILLING_KEY_ISSUE_ACTIVE_ECHO_CODES = Set.of("102", "BIL-KEY-101");
+	private static final Set<String> BILLING_KEY_ISSUE_PENDING_CODES = Set.of("105", "BIL-KEY-102");
+	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
 	private static final List<CardStatus> DUPLICATE_CHECK_STATUSES = List.of(
 		CardStatus.REGISTERING,
 		CardStatus.ACTIVE,
@@ -215,7 +216,7 @@ public class CardRegistrationService {
 	}
 
 	private boolean isPendingIssue(BillingKeyIssueResponse response) {
-		return response != null && BILLING_KEY_ISSUE_PENDING.equals(response.responseCode());
+		return response != null && BILLING_KEY_ISSUE_PENDING_CODES.contains(response.responseCode());
 	}
 
 	private boolean isSuccessfulIssue(BillingKeyIssueResponse response) {
@@ -223,8 +224,8 @@ public class CardRegistrationService {
 			&& !isBlank(response.billingKey())
 			&& !isBlank(response.maskedNumber())
 			&& (
-				BILLING_KEY_ISSUE_SUCCESS.equals(response.responseCode())
-					|| BILLING_KEY_ISSUE_ACTIVE_ECHO.equals(response.responseCode())
+				BILLING_KEY_ISSUE_SUCCESS_CODES.contains(response.responseCode())
+					|| BILLING_KEY_ISSUE_ACTIVE_ECHO_CODES.contains(response.responseCode())
 			);
 	}
 
@@ -265,7 +266,7 @@ public class CardRegistrationService {
 			BillingKeyDeleteResponse response = billingKeyServiceClient.delete(
 				new BillingKeyDeleteRequest(payCardId, billingKey)
 			);
-			if (response == null || !BILLING_KEY_DELETE_SUCCESS.equals(response.responseCode())) {
+			if (response == null || !BILLING_KEY_DELETE_SUCCESS_CODES.contains(response.responseCode())) {
 				log.error("Billing key compensation returned non-success response. payCardId={}", payCardId);
 			}
 		} catch (RuntimeException compensationException) {

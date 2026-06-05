@@ -205,10 +205,37 @@ class CardRegistrationServiceTest {
 	}
 
 	@Test
+	void registerActivatesCardWhenBillingKeyServiceReturnsTeamSuccessCode() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(cardProduct, issueResponse("BIL-KEY-100", "billing-key", "8000-****-****-1234"));
+
+		CardRegisterResponse response = cardRegistrationService.register(request);
+
+		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
+		assertThat(response.getMaskedNumber()).isEqualTo("8000-****-****-1234");
+	}
+
+	@Test
 	void registerActivatesCardWhenBillingKeyServiceReturnsActiveEcho() {
 		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("102", "existing-billing-key", "8000-****-****-1234"));
+
+		CardRegisterResponse response = cardRegistrationService.register(request);
+
+		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
+		assertThat(response.getMaskedNumber()).isEqualTo("8000-****-****-1234");
+	}
+
+	@Test
+	void registerActivatesCardWhenBillingKeyServiceReturnsTeamActiveEcho() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(
+			cardProduct,
+			issueResponse("BIL-KEY-101", "existing-billing-key", "8000-****-****-1234")
+		);
 
 		CardRegisterResponse response = cardRegistrationService.register(request);
 
@@ -269,6 +296,20 @@ class CardRegistrationServiceTest {
 		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);
 		stubSuccessfulRegistration(cardProduct, issueResponse("105", null, null));
+
+		assertThatThrownBy(() -> cardRegistrationService.register(request))
+			.isInstanceOf(BillingKeyIssuePendingException.class);
+
+		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
+		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
+		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
+	}
+
+	@Test
+	void registerSoftDeletesRegisteringCardWhenBillingKeyServiceReturnsTeamPendingCode() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(cardProduct, issueResponse("BIL-KEY-102", null, null));
 
 		assertThatThrownBy(() -> cardRegistrationService.register(request))
 			.isInstanceOf(BillingKeyIssuePendingException.class);
