@@ -21,6 +21,7 @@ public class InternalRecommendationSourceResponse {
 		private Long cardProductId;
 		private String cardCompany;
 		private String cardName;
+		private String imageUrl;
 		private String maskedNumber;
 		private Boolean isDefault;
 		private Long performanceAmount;
