@@ -12,6 +12,7 @@ public class CardRegisterResponse {
 	private Long cardProductId;
 	private String cardCompany;
 	private String cardName;
+	private String imageUrl;
 	private String maskedNumber;
 	private String cardAlias;
 	private String expiryYm;

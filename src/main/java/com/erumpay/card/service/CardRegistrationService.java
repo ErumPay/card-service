@@ -311,6 +311,7 @@ public class CardRegistrationService {
 			.cardProductId(card.getCardProductId())
 			.cardCompany(product.getCardCompany())
 			.cardName(product.getCardName())
+			.imageUrl(product.getImageUrl())
 			.maskedNumber(card.getMaskedNumber())
 			.cardAlias(card.getCardAlias())
 			.expiryYm(card.getExpiryYm())
