@@ -101,6 +101,17 @@ public class CardRegistered {
 		this.deletedAt = null;
 	}
 
+	public void markUnavailable(String maskedNumber, CardStatus status) {
+		if (status == CardStatus.ACTIVE || status == CardStatus.REGISTERING || status == CardStatus.DELETED) {
+			throw new IllegalArgumentException("unavailable card status is invalid: " + status);
+		}
+		this.encryptedBillingKey = null;
+		this.maskedNumber = maskedNumber;
+		this.defaultCard = false;
+		this.status = status;
+		this.deletedAt = null;
+	}
+
 	public boolean isDeleted() {
 		return status == CardStatus.DELETED;
 	}

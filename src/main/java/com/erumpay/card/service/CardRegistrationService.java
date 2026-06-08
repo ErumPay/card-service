@@ -51,7 +51,12 @@ public class CardRegistrationService {
 	private static final Set<String> BILLING_KEY_ISSUE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
 	private static final Set<String> BILLING_KEY_ISSUE_ACTIVE_ECHO_CODES = Set.of("102", "BIL-KEY-101");
 	private static final Set<String> BILLING_KEY_ISSUE_PENDING_CODES = Set.of("105", "BIL-KEY-102");
-	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
+	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of(
+		"100",
+		"BIL-KEY-100",
+		"SIM-TOKEN-100",
+		"SIM-TOKEN-103"
+	);
 	private static final List<CardStatus> DUPLICATE_CHECK_STATUSES = List.of(
 		CardStatus.REGISTERING,
 		CardStatus.ACTIVE,

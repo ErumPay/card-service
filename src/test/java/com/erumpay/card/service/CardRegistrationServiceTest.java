@@ -250,6 +250,38 @@ class CardRegistrationServiceTest {
 	}
 
 	@Test
+	void registerFailsAndSoftDeletesRegisteringCardWhenBillingKeyServiceReturnsCardExpired() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(cardProduct, issueResponse("SIM-CARD-202", null, "8000-****-****-1234"));
+
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
+			.isInstanceOf(BillingKeyIssueFailedException.class);
+
+		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
+		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
+		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
+		verify(cardRegisteredRepository, never()).findByUserIdAndDefaultCardTrueAndStatus(any(), any());
+		verify(cardNotificationEventPublisher, never()).publishRegistered(any(), any(), any());
+	}
+
+	@Test
+	void registerFailsAndSoftDeletesRegisteringCardWhenBillingKeyServiceReturnsCardLost() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(cardProduct, issueResponse("SIM-CARD-201", null, "8000-****-****-1234"));
+
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
+			.isInstanceOf(BillingKeyIssueFailedException.class);
+
+		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
+		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
+		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
+		verify(cardRegisteredRepository, never()).findByUserIdAndDefaultCardTrueAndStatus(any(), any());
+		verify(cardNotificationEventPublisher, never()).publishRegistered(any(), any(), any());
+	}
+
+	@Test
 	void registerUsesSixDigitBirthDateAsIs() {
 		CardRegisterRequest request = request("8000001234567890");
 		CardProduct cardProduct = cardProduct(10L);

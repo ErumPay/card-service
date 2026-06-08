@@ -58,7 +58,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RequiredArgsConstructor
 public class InternalCardService {
 
-	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
+	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of(
+		"100",
+		"BIL-KEY-100",
+		"SIM-TOKEN-100",
+		"SIM-TOKEN-103"
+	);
 	private static final String BILLING_KEY_NOT_FOUND_REASON = "BILLING_KEY_NOT_FOUND";
 	private static final int HTTP_NOT_FOUND = 404;
 
