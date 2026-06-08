@@ -66,8 +66,8 @@ class CardNotificationEventPublisherTest {
 		assertThat(payload.get("eventId").asText()).isEqualTo("card:3001:registered:user:101");
 		assertThat(payload.get("eventType").asText()).isEqualTo("CARD_REGISTERED");
 		assertThat(payload.get("userId").asLong()).isEqualTo(101L);
-		assertThat(payload.get("title").asText()).isEqualTo("카드가 등록되었습니다.");
-		assertThat(payload.get("content").asText()).isEqualTo("KB국민 My WE:SH 카드가 정상적으로 등록되었습니다.");
+		assertThat(payload.get("title").asText()).isEqualTo("카드 등록 완료");
+		assertThat(payload.get("content").asText()).isEqualTo("KB국민 My WE:SH 카드가 등록되었습니다.");
 		assertThat(payload.get("paymentId").isNull()).isTrue();
 		assertThat(payload.get("occurredAt").asText()).isEqualTo("2026-06-05T16:00:00");
 		assertThat(payload.get("correlationId").asText()).matches("^card_[0-9a-f\\-]{36}$");
@@ -87,8 +87,8 @@ class CardNotificationEventPublisherTest {
 		JsonNode payload = objectMapper.readTree(payloadCaptor.getValue());
 		assertThat(payload.get("eventId").asText()).isEqualTo("card:3001:deleted:user:101");
 		assertThat(payload.get("eventType").asText()).isEqualTo("CARD_DELETED");
-		assertThat(payload.get("title").asText()).isEqualTo("카드가 삭제되었습니다.");
-		assertThat(payload.get("content").asText()).isEqualTo("KB국민 My WE:SH 카드가 정상적으로 삭제되었습니다.");
+		assertThat(payload.get("title").asText()).isEqualTo("카드 삭제 완료");
+		assertThat(payload.get("content").asText()).isEqualTo("KB국민 My WE:SH 카드가 삭제되었습니다.");
 	}
 
 	@Test

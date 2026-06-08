@@ -231,11 +231,13 @@ public class CardManagementService {
 			.cardProductId(card.getCardProductId())
 			.cardCompany(product.getCardCompany())
 			.cardName(product.getCardName())
+			.imageUrl(product.getImageUrl())
 			.maskedNumber(card.getMaskedNumber())
 			.cardAlias(card.getCardAlias())
 			.expiryYm(card.getExpiryYm())
 			.isDefault(card.isDefaultCard())
 			.status(card.getStatus())
+			.createdAt(card.getCreatedAt())
 			.build();
 	}
 }
