@@ -19,8 +19,8 @@ public class CardNotificationEventPublisher {
 
 	private static final String CARD_REGISTERED = "CARD_REGISTERED";
 	private static final String CARD_DELETED = "CARD_DELETED";
-	private static final String REGISTERED_TITLE = "카드가 등록되었습니다.";
-	private static final String DELETED_TITLE = "카드가 삭제되었습니다.";
+	private static final String REGISTERED_TITLE = "카드 등록 완료";
+	private static final String DELETED_TITLE = "카드 삭제 완료";
 
 	private final KafkaTemplate<String, String> kafkaTemplate;
 	private final ObjectMapper objectMapper;
@@ -40,7 +40,7 @@ public class CardNotificationEventPublisher {
 				CARD_REGISTERED,
 				userId,
 				REGISTERED_TITLE,
-				cardName + "가 정상적으로 등록되었습니다.",
+				cardName + "가 등록되었습니다.",
 				null,
 				LocalDateTime.now(clock),
 				correlationId()
@@ -59,7 +59,7 @@ public class CardNotificationEventPublisher {
 				CARD_DELETED,
 				userId,
 				DELETED_TITLE,
-				cardName + "가 정상적으로 삭제되었습니다.",
+				cardName + "가 삭제되었습니다.",
 				null,
 				LocalDateTime.now(clock),
 				correlationId()
