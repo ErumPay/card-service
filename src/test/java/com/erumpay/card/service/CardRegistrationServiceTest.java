@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -213,6 +214,24 @@ class CardRegistrationServiceTest {
 		assertThat(billingKeyCryptoService.decrypt(storedBillingKey)).isEqualTo("billing-key");
 		verify(cardPerformanceSyncService).syncAfterRegistration(any(AuthUserInfoResponse.class), eq(100L), eq(cardProduct));
 		verify(cardNotificationEventPublisher).publishRegistered(1L, 100L, "LOCA 365");
+	}
+
+	@Test
+	void registerSucceedsAndPublishesNotificationWhenPerformanceSyncFails() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
+		doThrow(new RuntimeException("performance sync failed"))
+			.when(cardPerformanceSyncService)
+			.syncAfterRegistration(any(AuthUserInfoResponse.class), eq(100L), eq(cardProduct));
+
+		CardRegisterResponse response = cardRegistrationService.register(1L, request);
+
+		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
+		InOrder inOrder = inOrder(cardPerformanceSyncService, cardNotificationEventPublisher);
+		inOrder.verify(cardPerformanceSyncService)
+			.syncAfterRegistration(any(AuthUserInfoResponse.class), eq(100L), eq(cardProduct));
+		inOrder.verify(cardNotificationEventPublisher).publishRegistered(1L, 100L, "LOCA 365");
 	}
 
 	@Test

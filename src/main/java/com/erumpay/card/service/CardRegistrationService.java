@@ -110,7 +110,16 @@ public class CardRegistrationService {
 			registeringCard,
 			issueResponse
 		);
-		cardPerformanceSyncService.syncAfterRegistration(userInfo, response.getCardId(), cardProduct);
+		try {
+			cardPerformanceSyncService.syncAfterRegistration(userInfo, response.getCardId(), cardProduct);
+		} catch (RuntimeException exception) {
+			log.warn(
+				"Card performance sync failed after card registration. userId={}, cardId={}",
+				userId,
+				response.getCardId(),
+				exception
+			);
+		}
 		cardNotificationEventPublisher.publishRegistered(userId, response.getCardId(), cardProduct.getCardName());
 		return response;
 	}
