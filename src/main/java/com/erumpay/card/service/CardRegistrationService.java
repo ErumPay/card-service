@@ -70,6 +70,7 @@ public class CardRegistrationService {
 	private final BillingKeyServiceClient billingKeyServiceClient;
 	private final BillingKeyCryptoService billingKeyCryptoService;
 	private final CardNotificationEventPublisher cardNotificationEventPublisher;
+	private final CardPerformanceSyncService cardPerformanceSyncService;
 	private final TransactionTemplate transactionTemplate;
 	private final Clock clock;
 
@@ -82,7 +83,8 @@ public class CardRegistrationService {
 
 		validateDuplicateRegistration(userId, cardProduct.getCardProductId());
 
-		String billingBirthDate = findBillingBirthDate(userId);
+		AuthUserInfoResponse userInfo = findActiveUserInfo(userId);
+		String billingBirthDate = normalizeBirthDate(userInfo.birthDate());
 		CardRegistered registeringCard = createRegisteringCard(userId, request, cardProduct.getCardProductId());
 		BillingKeyIssueResponse issueResponse;
 		try {
@@ -108,6 +110,7 @@ public class CardRegistrationService {
 			registeringCard,
 			issueResponse
 		);
+		cardPerformanceSyncService.syncAfterRegistration(userInfo, response.getCardId(), cardProduct);
 		cardNotificationEventPublisher.publishRegistered(userId, response.getCardId(), cardProduct.getCardName());
 		return response;
 	}
@@ -139,7 +142,7 @@ public class CardRegistrationService {
 		}
 	}
 
-	private String findBillingBirthDate(Long userId) {
+	private AuthUserInfoResponse findActiveUserInfo(Long userId) {
 		AuthUserInfoResponse response;
 		try {
 			response = authServiceClient.getUserInfo(userId);
@@ -157,7 +160,7 @@ public class CardRegistrationService {
 		if (!USER_STATUS_ACTIVE.equals(response.status())) {
 			throw new UserNotActiveException();
 		}
-		return normalizeBirthDate(response.birthDate());
+		return response;
 	}
 
 	private String normalizeBirthDate(String birthDate) {

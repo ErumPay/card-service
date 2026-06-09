@@ -80,6 +80,9 @@ class CardRegistrationServiceTest {
 	@Mock
 	private CardNotificationEventPublisher cardNotificationEventPublisher;
 
+	@Mock
+	private CardPerformanceSyncService cardPerformanceSyncService;
+
 	private BillingKeyCryptoService billingKeyCryptoService;
 
 	private CardRegistrationService cardRegistrationService;
@@ -94,6 +97,7 @@ class CardRegistrationServiceTest {
 			billingKeyServiceClient,
 			billingKeyCryptoService,
 			cardNotificationEventPublisher,
+			cardPerformanceSyncService,
 			transactionTemplate(),
 			FIXED_CLOCK
 		);
@@ -207,6 +211,7 @@ class CardRegistrationServiceTest {
 		assertThat(storedBillingKey).startsWith("enc:v1:");
 		assertThat(storedBillingKey).isNotEqualTo("billing-key");
 		assertThat(billingKeyCryptoService.decrypt(storedBillingKey)).isEqualTo("billing-key");
+		verify(cardPerformanceSyncService).syncAfterRegistration(any(AuthUserInfoResponse.class), eq(100L), eq(cardProduct));
 		verify(cardNotificationEventPublisher).publishRegistered(1L, 100L, "LOCA 365");
 	}
 
@@ -262,6 +267,7 @@ class CardRegistrationServiceTest {
 		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
 		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
 		verify(cardRegisteredRepository, never()).findByUserIdAndDefaultCardTrueAndStatus(any(), any());
+		verify(cardPerformanceSyncService, never()).syncAfterRegistration(any(), any(), any());
 		verify(cardNotificationEventPublisher, never()).publishRegistered(any(), any(), any());
 	}
 
@@ -504,6 +510,8 @@ class CardRegistrationServiceTest {
 	void billingKeyClientDtosMaskSensitiveValuesInToString() {
 		assertThat(new AuthUserInfoResponse(1L, "19900101", "ACTIVE").toString())
 			.doesNotContain("19900101");
+		assertThat(new AuthUserInfoResponse(1L, "홍길동", "01012345678", "19900101", "ACTIVE").toString())
+			.doesNotContain("01012345678", "19900101");
 		assertThat(new BillingKeyIssueRequest(100L, "8000001234567890", "2812", "123", "12", "900101").toString())
 			.doesNotContain("8000001234567890", "2812", "123", "12", "900101");
 		assertThat(issueResponse("100", "billing-key", "8000-****-****-1234").toString())
@@ -518,7 +526,8 @@ class CardRegistrationServiceTest {
 		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
 		when(cardRegisteredRepository.existsByUserIdAndCardProductIdAndStatusIn(eq(1L), eq(10L), any()))
 			.thenReturn(false);
-		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "19900101", "ACTIVE"));
+		when(authServiceClient.getUserInfo(1L))
+			.thenReturn(new AuthUserInfoResponse(1L, "홍길동", "01012345678", "19900101", "ACTIVE"));
 		when(cardRegisteredRepository.save(any(CardRegistered.class))).thenAnswer(invocation -> {
 			CardRegistered card = invocation.getArgument(0);
 			if (card.getCardId() == null) {
