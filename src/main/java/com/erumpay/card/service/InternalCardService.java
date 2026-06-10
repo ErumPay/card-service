@@ -38,6 +38,8 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -57,6 +59,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 @RequiredArgsConstructor
 public class InternalCardService {
+
+	private static final DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
 
 	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of(
 		"100",
@@ -194,7 +198,9 @@ public class InternalCardService {
 		List<Long> cardIds = cards.stream()
 			.map(CardRegistered::getCardId)
 			.toList();
-		Map<Long, Long> performanceAmountsByCardId = findPerformanceAmountsByCardId(userId, yearMonth, cardIds);
+		Map<Long, Long> previousPerformanceAmountsByCardId = findPerformanceAmountsByCardId(userId, yearMonth, cardIds);
+		Map<Long, Long> currentPerformanceAmountsByCardId =
+			findPerformanceAmountsByCardId(userId, currentYearMonth(), cardIds);
 		RecommendationBenefitSources benefitSources = findBenefitSourcesByProductId(productsById.keySet());
 		Map<BenefitUsageKey, InternalBenefitUsageResponse> usageByCardAndBenefit =
 			findBenefitUsagesByCardAndBenefit(userId, cardIds, benefitSources.benefitIds());
@@ -203,7 +209,8 @@ public class InternalCardService {
 			.map(card -> toRecommendationCardResponse(
 				card,
 				productsById.get(card.getCardProductId()),
-				performanceAmountsByCardId.getOrDefault(card.getCardId(), 0L),
+				previousPerformanceAmountsByCardId.getOrDefault(card.getCardId(), 0L),
+				currentPerformanceAmountsByCardId.getOrDefault(card.getCardId(), 0L),
 				benefitSources,
 				usageByCardAndBenefit
 			))
@@ -319,6 +326,10 @@ public class InternalCardService {
 			.collect(Collectors.toMap(CardPerformance::getCardId, CardPerformance::getAmount));
 	}
 
+	private String currentYearMonth() {
+		return YearMonth.now(clock).format(YEAR_MONTH_FORMATTER);
+	}
+
 	private RecommendationBenefitSources findBenefitSourcesByProductId(Collection<Long> cardProductIds) {
 		List<CardBenefit> benefits = cardBenefitRepository
 			.findByCardProductIdInOrderByCardProductIdAscPriorityDescBenefitIdAsc(cardProductIds);
@@ -390,7 +401,8 @@ public class InternalCardService {
 	private InternalRecommendationCardResponse toRecommendationCardResponse(
 		CardRegistered card,
 		CardProduct product,
-		Long performanceAmount,
+		Long previousMonthPerformanceAmount,
+		Long currentMonthPerformanceAmount,
 		RecommendationBenefitSources benefitSources,
 		Map<BenefitUsageKey, InternalBenefitUsageResponse> usageByCardAndBenefit
 	) {
@@ -419,7 +431,9 @@ public class InternalCardService {
 			.imageUrl(product.getImageUrl())
 			.maskedNumber(card.getMaskedNumber())
 			.isDefault(card.isDefaultCard())
-			.performanceAmount(performanceAmount)
+			.performanceAmount(previousMonthPerformanceAmount)
+			.previousMonthPerformanceAmount(previousMonthPerformanceAmount)
+			.currentMonthPerformanceAmount(currentMonthPerformanceAmount)
 			.benefits(benefits)
 			.build();
 	}

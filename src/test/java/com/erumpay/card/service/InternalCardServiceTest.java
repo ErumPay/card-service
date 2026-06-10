@@ -347,7 +347,8 @@ class InternalCardServiceTest {
 	void getRecommendationSourceReturnsCardsWithPerformanceAndBenefits() {
 		CardRegistered card = card(10L, 1L, 100L, CardStatus.ACTIVE, true, "encrypted-key");
 		CardProduct product = product(100L, "롯데카드", "LOCA 365 카드");
-		CardPerformance performance = performance(10L, 350000L);
+		CardPerformance previousPerformance = performance(10L, 350000L);
+		CardPerformance currentPerformance = performance(10L, 120000L);
 		CardBenefit benefit = benefit(1000L, 100L);
 		CardBenefitBrand brand = brand(1000L, "스타벅스");
 		CardBenefitTier tier = tier(2000L, 1000L);
@@ -357,8 +358,10 @@ class InternalCardServiceTest {
 
 		when(cardRegisteredRepository.findPaymentAvailableCards(1L, CardStatus.ACTIVE)).thenReturn(List.of(card));
 		when(cardProductRepository.findAllById(any())).thenReturn(List.of(product));
+		when(cardPerformanceRepository.findByUserIdAndYearMonthAndCardIdIn(eq(1L), eq("202604"), any()))
+			.thenReturn(List.of(previousPerformance));
 		when(cardPerformanceRepository.findByUserIdAndYearMonthAndCardIdIn(eq(1L), eq("202605"), any()))
-			.thenReturn(List.of(performance));
+			.thenReturn(List.of(currentPerformance));
 		when(cardBenefitRepository.findByCardProductIdInOrderByCardProductIdAscPriorityDescBenefitIdAsc(any()))
 			.thenReturn(List.of(benefit));
 		when(cardBenefitBrandRepository.findByBenefitIdInOrderByBrandNameAsc(List.of(1000L)))
@@ -376,13 +379,15 @@ class InternalCardServiceTest {
 			))
 			.thenReturn(List.of(dailyUsage, monthlyUsage, yearlyUsage));
 
-		InternalRecommendationSourceResponse response = internalCardService.getRecommendationSource(1L, "202605");
+		InternalRecommendationSourceResponse response = internalCardService.getRecommendationSource(1L, "202604");
 
 		assertThat(response.getUserId()).isEqualTo(1L);
-		assertThat(response.getYearMonth()).isEqualTo("202605");
+		assertThat(response.getYearMonth()).isEqualTo("202604");
 		assertThat(response.getCards()).hasSize(1);
 		assertThat(response.getCards().getFirst().getCardId()).isEqualTo(10L);
 		assertThat(response.getCards().getFirst().getPerformanceAmount()).isEqualTo(350000L);
+		assertThat(response.getCards().getFirst().getPreviousMonthPerformanceAmount()).isEqualTo(350000L);
+		assertThat(response.getCards().getFirst().getCurrentMonthPerformanceAmount()).isEqualTo(120000L);
 		assertThat(response.getCards().getFirst().getBenefits()).hasSize(1);
 		assertThat(response.getCards().getFirst().getBenefits().getFirst().getBrandNames())
 			.containsExactly("스타벅스");
