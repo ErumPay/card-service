@@ -25,6 +25,8 @@ public class InternalRecommendationSourceResponse {
 		private String maskedNumber;
 		private Boolean isDefault;
 		private Long performanceAmount;
+		private Long previousMonthPerformanceAmount;
+		private Long currentMonthPerformanceAmount;
 		private List<InternalRecommendationBenefitResponse> benefits;
 	}
 

@@ -6,6 +6,8 @@ import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface CardBenefitUsageRepository extends JpaRepository<CardBenefitUsage, Long> {
 
@@ -21,5 +23,22 @@ public interface CardBenefitUsageRepository extends JpaRepository<CardBenefitUsa
 		CardBenefitUsageStatus status,
 		LocalDateTime approvedAtFrom,
 		LocalDateTime approvedAtTo
+	);
+
+	@Query("""
+		select coalesce(sum(usage.benefitAmount), 0)
+		from CardBenefitUsage usage
+		where usage.userId = :userId
+			and usage.cardId = :cardId
+			and usage.status = :status
+			and usage.approvedAt >= :approvedAtFrom
+			and usage.approvedAt < :approvedAtTo
+		""")
+	Long sumBenefitAmount(
+		@Param("userId") Long userId,
+		@Param("cardId") Long cardId,
+		@Param("status") CardBenefitUsageStatus status,
+		@Param("approvedAtFrom") LocalDateTime approvedAtFrom,
+		@Param("approvedAtTo") LocalDateTime approvedAtTo
 	);
 }
