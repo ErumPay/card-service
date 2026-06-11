@@ -22,7 +22,6 @@ import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
 import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
 import com.erumpay.card.event.CardNotificationEventPublisher;
 import com.erumpay.card.exception.BillingKeyDeactivationFailedException;
-import com.erumpay.card.exception.BillingKeyNotFoundException;
 import com.erumpay.card.exception.BillingKeyServiceUnavailableException;
 import com.erumpay.card.exception.CardNotActiveException;
 import com.erumpay.card.exception.CardNotFoundException;
@@ -247,6 +246,53 @@ class CardManagementServiceTest {
 	}
 
 	@Test
+	void deleteCardAcceptsSimulatorBillingKeyDeleteSuccessCode() {
+		CardRegistered target = card(
+			10L,
+			1L,
+			100L,
+			CardStatus.ACTIVE,
+			false,
+			billingKeyCryptoService.encrypt("billing-key")
+		);
+
+		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		stubProduct(100L, "LOCA 365 카드");
+		when(billingKeyServiceClient.delete(any()))
+			.thenReturn(new BillingKeyDeleteResponse(10L, "billing-key", "SIM-TOKEN-100", "OK"));
+
+		cardManagementService.deleteCard(1L, 10L);
+
+		verify(billingKeyServiceClient).delete(any());
+		verify(target).delete(any(LocalDateTime.class));
+		verify(cardNotificationEventPublisher).publishDeleted(1L, 10L, "LOCA 365 카드");
+	}
+
+	@Test
+	void deleteCardContinuesWhenBillingKeyAlreadyMissing() {
+		CardRegistered target = card(
+			10L,
+			1L,
+			100L,
+			CardStatus.ACTIVE,
+			false,
+			billingKeyCryptoService.encrypt("billing-key")
+		);
+
+		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		stubProduct(100L, "LOCA 365 카드");
+		FeignException notFound = mock(FeignException.class);
+		when(notFound.status()).thenReturn(404);
+		when(billingKeyServiceClient.delete(any())).thenThrow(notFound);
+
+		cardManagementService.deleteCard(1L, 10L);
+
+		verify(billingKeyServiceClient).delete(any());
+		verify(target).delete(any(LocalDateTime.class));
+		verify(cardNotificationEventPublisher).publishDeleted(1L, 10L, "LOCA 365 카드");
+	}
+
+	@Test
 	void deleteAlreadyDeletedCardDoesNothing() {
 		CardRegistered target = card(10L, 1L, 100L, CardStatus.DELETED, false, "billing-key");
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
@@ -274,16 +320,16 @@ class CardManagementServiceTest {
 	}
 
 	@Test
-	void deleteCardFailsWhenBillingKeyDoesNotExist() {
-		CardRegistered target = card(10L, 1L, 100L, CardStatus.ACTIVE, false, null);
+	void deleteUnavailableCardSoftDeletesWithoutBillingKeyDeactivation() {
+		CardRegistered target = card(10L, 1L, 100L, CardStatus.EXPIRED, false, null);
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
+		stubProduct(100L, "LOCA 365 移대뱶");
 
-		assertThatThrownBy(() -> cardManagementService.deleteCard(1L, 10L))
-			.isInstanceOf(BillingKeyNotFoundException.class);
+		cardManagementService.deleteCard(1L, 10L);
 
 		verify(billingKeyServiceClient, never()).delete(any());
-		verify(target, never()).delete(any());
-		verify(cardNotificationEventPublisher, never()).publishDeleted(any(), any(), any());
+		verify(target).delete(any());
+		verify(cardNotificationEventPublisher).publishDeleted(1L, 10L, "LOCA 365 移대뱶");
 	}
 
 	@Test
@@ -308,7 +354,7 @@ class CardManagementServiceTest {
 
 		when(cardRegisteredRepository.findByCardIdAndUserId(10L, 1L)).thenReturn(Optional.of(target));
 		stubProduct(100L, "LOCA 365 카드");
-		when(notFound.status()).thenReturn(404);
+		when(notFound.status()).thenReturn(400);
 		when(billingKeyServiceClient.delete(any())).thenThrow(notFound);
 
 		assertThatThrownBy(() -> cardManagementService.deleteCard(1L, 10L))

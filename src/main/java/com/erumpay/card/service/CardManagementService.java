@@ -11,7 +11,6 @@ import com.erumpay.card.dto.client.BillingKeyDeleteRequest;
 import com.erumpay.card.dto.client.BillingKeyDeleteResponse;
 import com.erumpay.card.event.CardNotificationEventPublisher;
 import com.erumpay.card.exception.BillingKeyDeactivationFailedException;
-import com.erumpay.card.exception.BillingKeyNotFoundException;
 import com.erumpay.card.exception.BillingKeyServiceUnavailableException;
 import com.erumpay.card.exception.CardNotActiveException;
 import com.erumpay.card.exception.CardNotFoundException;
@@ -38,7 +37,13 @@ public class CardManagementService {
 	private static final String CARD_NOT_FOUND = "CARD_NOT_FOUND";
 	private static final String CARD_NOT_ACTIVE = "CARD_NOT_ACTIVE";
 	private static final String BILLING_KEY_NOT_FOUND = "BILLING_KEY_NOT_FOUND";
-	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
+	private static final int HTTP_NOT_FOUND = 404;
+	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of(
+		"100",
+		"BIL-KEY-100",
+		"SIM-TOKEN-100",
+		"SIM-TOKEN-103"
+	);
 	private static final List<CardStatus> VISIBLE_CARD_STATUSES = List.of(
 		CardStatus.ACTIVE,
 		CardStatus.PAUSED,
@@ -108,13 +113,12 @@ public class CardManagementService {
 		if (card.isRegistering()) {
 			throw new CardNotFoundException();
 		}
-		if (!card.hasBillingKey()) {
-			throw new BillingKeyNotFoundException();
-		}
 
 		String cardName = findProductById(card.getCardProductId()).getCardName();
-		String billingKey = billingKeyCryptoService.decrypt(card.getEncryptedBillingKey());
-		deactivateBillingKey(card.getCardId(), billingKey);
+		if (card.hasBillingKey()) {
+			String billingKey = billingKeyCryptoService.decrypt(card.getEncryptedBillingKey());
+			deactivateBillingKey(card.getCardId(), billingKey);
+		}
 		softDeleteCard(userId, cardId);
 		cardNotificationEventPublisher.publishDeleted(userId, cardId, cardName);
 	}
@@ -124,6 +128,9 @@ public class CardManagementService {
 		try {
 			response = billingKeyServiceClient.delete(new BillingKeyDeleteRequest(payCardId, billingKey));
 		} catch (FeignException exception) {
+			if (exception.status() == HTTP_NOT_FOUND) {
+				return;
+			}
 			if (isBillingKeyServiceUnavailable(exception.status())) {
 				throw new BillingKeyServiceUnavailableException(exception);
 			}

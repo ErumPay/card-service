@@ -10,4 +10,6 @@ public class CardPerformanceResponse {
 	private Long cardId;
 	private String yearMonth;
 	private Long amount;
+	private Long discountAmount;
+	private Long targetAmount;
 }

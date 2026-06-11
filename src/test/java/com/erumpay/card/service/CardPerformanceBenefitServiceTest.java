@@ -16,6 +16,7 @@ import com.erumpay.card.domain.entity.CardBenefitTier;
 import com.erumpay.card.domain.entity.CardPerformance;
 import com.erumpay.card.domain.entity.CardRegistered;
 import com.erumpay.card.domain.enums.BenefitType;
+import com.erumpay.card.domain.enums.CardBenefitUsageStatus;
 import com.erumpay.card.domain.enums.CardStatus;
 import com.erumpay.card.domain.enums.DayCondition;
 import com.erumpay.card.domain.enums.ServiceCategory;
@@ -26,9 +27,11 @@ import com.erumpay.card.exception.InvalidYearMonthException;
 import com.erumpay.card.repository.CardBenefitBrandRepository;
 import com.erumpay.card.repository.CardBenefitRepository;
 import com.erumpay.card.repository.CardBenefitTierRepository;
+import com.erumpay.card.repository.CardBenefitUsageRepository;
 import com.erumpay.card.repository.CardPerformanceRepository;
 import com.erumpay.card.repository.CardRegisteredRepository;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Collection;
 import java.util.List;
@@ -58,6 +61,9 @@ class CardPerformanceBenefitServiceTest {
 	@Mock
 	private CardBenefitTierRepository cardBenefitTierRepository;
 
+	@Mock
+	private CardBenefitUsageRepository cardBenefitUsageRepository;
+
 	private CardPerformanceBenefitService cardPerformanceBenefitService;
 
 	@BeforeEach
@@ -68,6 +74,7 @@ class CardPerformanceBenefitServiceTest {
 			cardBenefitRepository,
 			cardBenefitBrandRepository,
 			cardBenefitTierRepository,
+			cardBenefitUsageRepository,
 			new YearMonthValidator()
 		);
 	}
@@ -76,17 +83,33 @@ class CardPerformanceBenefitServiceTest {
 	void getPerformanceReturnsSavedAmount() {
 		CardRegistered card = card(10L, 1L, 100L);
 		CardPerformance performance = performance(350000L);
+		CardBenefit benefit = benefit(1000L, 100L, ServiceCategory.CAFE, BenefitType.DISCOUNT);
+		CardBenefitTier lowerTier = tier(2000L, 1000L, 300000L);
+		CardBenefitTier nextTier = tier(2001L, 1000L, 500000L);
 
 		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
 			.thenReturn(Optional.of(card));
 		when(cardPerformanceRepository.findByCardIdAndUserIdAndYearMonth(10L, 1L, "202605"))
 			.thenReturn(Optional.of(performance));
+		when(cardBenefitUsageRepository.sumBenefitAmount(
+			1L,
+			10L,
+			CardBenefitUsageStatus.APPROVED,
+			LocalDateTime.of(2026, 5, 1, 0, 0),
+			LocalDateTime.of(2026, 6, 1, 0, 0)
+		)).thenReturn(12250L);
+		when(cardBenefitRepository.findByCardProductIdOrderByPriorityDescBenefitIdAsc(100L))
+			.thenReturn(List.of(benefit));
+		when(cardBenefitTierRepository.findByBenefitIdInOrderByMinPrevMonthUsageAsc(List.of(1000L)))
+			.thenReturn(List.of(lowerTier, nextTier));
 
 		CardPerformanceResponse response = cardPerformanceBenefitService.getPerformance(1L, 10L, "202605");
 
 		assertThat(response.getCardId()).isEqualTo(10L);
 		assertThat(response.getYearMonth()).isEqualTo("202605");
 		assertThat(response.getAmount()).isEqualTo(350000L);
+		assertThat(response.getDiscountAmount()).isEqualTo(12250L);
+		assertThat(response.getTargetAmount()).isEqualTo(500000L);
 		ArgumentCaptor<Collection<CardStatus>> statusesCaptor = ArgumentCaptor.forClass(Collection.class);
 		verify(cardRegisteredRepository)
 			.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), statusesCaptor.capture());
@@ -101,10 +124,40 @@ class CardPerformanceBenefitServiceTest {
 			.thenReturn(Optional.of(card));
 		when(cardPerformanceRepository.findByCardIdAndUserIdAndYearMonth(10L, 1L, "202605"))
 			.thenReturn(Optional.empty());
+		when(cardBenefitUsageRepository.sumBenefitAmount(any(), any(), any(), any(), any()))
+			.thenReturn(0L);
+		when(cardBenefitRepository.findByCardProductIdOrderByPriorityDescBenefitIdAsc(100L))
+			.thenReturn(List.of());
 
 		CardPerformanceResponse response = cardPerformanceBenefitService.getPerformance(1L, 10L, "202605");
 
 		assertThat(response.getAmount()).isZero();
+		assertThat(response.getDiscountAmount()).isZero();
+		assertThat(response.getTargetAmount()).isNull();
+	}
+
+	@Test
+	void getPerformanceReturnsHighestTargetWhenAllTiersAreReached() {
+		CardRegistered card = card(10L, 1L, 100L);
+		CardPerformance performance = performance(700000L);
+		CardBenefit benefit = benefit(1000L, 100L, ServiceCategory.CAFE, BenefitType.DISCOUNT);
+		CardBenefitTier lowerTier = tier(2000L, 1000L, 300000L);
+		CardBenefitTier highestTier = tier(2001L, 1000L, 500000L);
+
+		when(cardRegisteredRepository.findByCardIdAndUserIdAndStatusIn(eq(10L), eq(1L), any()))
+			.thenReturn(Optional.of(card));
+		when(cardPerformanceRepository.findByCardIdAndUserIdAndYearMonth(10L, 1L, "202605"))
+			.thenReturn(Optional.of(performance));
+		when(cardBenefitUsageRepository.sumBenefitAmount(any(), any(), any(), any(), any()))
+			.thenReturn(0L);
+		when(cardBenefitRepository.findByCardProductIdOrderByPriorityDescBenefitIdAsc(100L))
+			.thenReturn(List.of(benefit));
+		when(cardBenefitTierRepository.findByBenefitIdInOrderByMinPrevMonthUsageAsc(List.of(1000L)))
+			.thenReturn(List.of(lowerTier, highestTier));
+
+		CardPerformanceResponse response = cardPerformanceBenefitService.getPerformance(1L, 10L, "202605");
+
+		assertThat(response.getTargetAmount()).isEqualTo(500000L);
 	}
 
 	@Test

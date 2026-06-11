@@ -47,6 +47,9 @@ auth:
 billing-key:
   base-url: ${BILLING_KEY_SERVICE_BASE_URL:http://localhost:8092}
 
+card-simulator:
+  base-url: ${CARD_SIMULATOR_BASE_URL:http://localhost:8095}
+
 card:
   billing-key:
     aes-key: ${CARD_BILLING_KEY_AES_KEY}

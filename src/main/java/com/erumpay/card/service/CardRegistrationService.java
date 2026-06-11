@@ -51,7 +51,12 @@ public class CardRegistrationService {
 	private static final Set<String> BILLING_KEY_ISSUE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
 	private static final Set<String> BILLING_KEY_ISSUE_ACTIVE_ECHO_CODES = Set.of("102", "BIL-KEY-101");
 	private static final Set<String> BILLING_KEY_ISSUE_PENDING_CODES = Set.of("105", "BIL-KEY-102");
-	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
+	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of(
+		"100",
+		"BIL-KEY-100",
+		"SIM-TOKEN-100",
+		"SIM-TOKEN-103"
+	);
 	private static final List<CardStatus> DUPLICATE_CHECK_STATUSES = List.of(
 		CardStatus.REGISTERING,
 		CardStatus.ACTIVE,
@@ -65,6 +70,7 @@ public class CardRegistrationService {
 	private final BillingKeyServiceClient billingKeyServiceClient;
 	private final BillingKeyCryptoService billingKeyCryptoService;
 	private final CardNotificationEventPublisher cardNotificationEventPublisher;
+	private final CardPerformanceSyncService cardPerformanceSyncService;
 	private final TransactionTemplate transactionTemplate;
 	private final Clock clock;
 
@@ -77,7 +83,8 @@ public class CardRegistrationService {
 
 		validateDuplicateRegistration(userId, cardProduct.getCardProductId());
 
-		String billingBirthDate = findBillingBirthDate(userId);
+		AuthUserInfoResponse userInfo = findActiveUserInfo(userId);
+		String billingBirthDate = normalizeBirthDate(userInfo.birthDate());
 		CardRegistered registeringCard = createRegisteringCard(userId, request, cardProduct.getCardProductId());
 		BillingKeyIssueResponse issueResponse;
 		try {
@@ -103,6 +110,16 @@ public class CardRegistrationService {
 			registeringCard,
 			issueResponse
 		);
+		try {
+			cardPerformanceSyncService.syncAfterRegistration(userInfo, response.getCardId(), cardProduct);
+		} catch (RuntimeException exception) {
+			log.warn(
+				"Card performance sync failed after card registration. userId={}, cardId={}",
+				userId,
+				response.getCardId(),
+				exception
+			);
+		}
 		cardNotificationEventPublisher.publishRegistered(userId, response.getCardId(), cardProduct.getCardName());
 		return response;
 	}
@@ -134,7 +151,7 @@ public class CardRegistrationService {
 		}
 	}
 
-	private String findBillingBirthDate(Long userId) {
+	private AuthUserInfoResponse findActiveUserInfo(Long userId) {
 		AuthUserInfoResponse response;
 		try {
 			response = authServiceClient.getUserInfo(userId);
@@ -152,7 +169,7 @@ public class CardRegistrationService {
 		if (!USER_STATUS_ACTIVE.equals(response.status())) {
 			throw new UserNotActiveException();
 		}
-		return normalizeBirthDate(response.birthDate());
+		return response;
 	}
 
 	private String normalizeBirthDate(String birthDate) {

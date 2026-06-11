@@ -66,6 +66,10 @@ public class CardPerformance {
 		this.amount += amount;
 	}
 
+	public void overwrite(Long amount) {
+		this.amount = amount;
+	}
+
 	public boolean decreaseWithFloor(Long amount) {
 		boolean clamped = this.amount < amount;
 		this.amount = clamped ? 0L : this.amount - amount;

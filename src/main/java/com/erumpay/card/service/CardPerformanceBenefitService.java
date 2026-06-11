@@ -5,6 +5,7 @@ import com.erumpay.card.domain.entity.CardBenefitBrand;
 import com.erumpay.card.domain.entity.CardBenefitTier;
 import com.erumpay.card.domain.entity.CardPerformance;
 import com.erumpay.card.domain.entity.CardRegistered;
+import com.erumpay.card.domain.enums.CardBenefitUsageStatus;
 import com.erumpay.card.domain.enums.CardStatus;
 import com.erumpay.card.dto.CardBenefitResponse;
 import com.erumpay.card.dto.CardBenefitResponse.CardBenefitTierResponse;
@@ -13,12 +14,17 @@ import com.erumpay.card.exception.CardNotFoundException;
 import com.erumpay.card.repository.CardBenefitBrandRepository;
 import com.erumpay.card.repository.CardBenefitRepository;
 import com.erumpay.card.repository.CardBenefitTierRepository;
+import com.erumpay.card.repository.CardBenefitUsageRepository;
 import com.erumpay.card.repository.CardPerformanceRepository;
 import com.erumpay.card.repository.CardRegisteredRepository;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,11 +40,14 @@ public class CardPerformanceBenefitService {
 		CardStatus.EXPIRED
 	);
 
+	private static final DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
+
 	private final CardRegisteredRepository cardRegisteredRepository;
 	private final CardPerformanceRepository cardPerformanceRepository;
 	private final CardBenefitRepository cardBenefitRepository;
 	private final CardBenefitBrandRepository cardBenefitBrandRepository;
 	private final CardBenefitTierRepository cardBenefitTierRepository;
+	private final CardBenefitUsageRepository cardBenefitUsageRepository;
 	private final YearMonthValidator yearMonthValidator;
 
 	// [be] 이준혁 260521 2028 | 삭제되지 않은 사용자 카드의 월 실적을 조회한다. 실적 row가 없으면 0원으로 응답한다.
@@ -50,11 +59,15 @@ public class CardPerformanceBenefitService {
 		Long amount = cardPerformanceRepository.findByCardIdAndUserIdAndYearMonth(card.getCardId(), userId, yearMonth)
 			.map(CardPerformance::getAmount)
 			.orElse(0L);
+		Long discountAmount = findDiscountAmount(userId, card.getCardId(), yearMonth);
+		Long targetAmount = findTargetAmount(card.getCardProductId(), amount);
 
 		return CardPerformanceResponse.builder()
 			.cardId(card.getCardId())
 			.yearMonth(yearMonth)
 			.amount(amount)
+			.discountAmount(discountAmount)
+			.targetAmount(targetAmount)
 			.build();
 	}
 
@@ -99,6 +112,49 @@ public class CardPerformanceBenefitService {
 	private Map<Long, List<CardBenefitTier>> findTiersByBenefitId(Collection<Long> benefitIds) {
 		return cardBenefitTierRepository.findByBenefitIdInOrderByMinPrevMonthUsageAsc(benefitIds).stream()
 			.collect(Collectors.groupingBy(CardBenefitTier::getBenefitId));
+	}
+
+	private Long findDiscountAmount(Long userId, Long cardId, String yearMonth) {
+		YearMonth parsedYearMonth = YearMonth.parse(yearMonth, YEAR_MONTH_FORMATTER);
+		LocalDateTime from = parsedYearMonth.atDay(1).atStartOfDay();
+		LocalDateTime to = parsedYearMonth.plusMonths(1).atDay(1).atStartOfDay();
+		Long discountAmount = cardBenefitUsageRepository.sumBenefitAmount(
+			userId,
+			cardId,
+			CardBenefitUsageStatus.APPROVED,
+			from,
+			to
+		);
+		return discountAmount == null ? 0L : discountAmount;
+	}
+
+	private Long findTargetAmount(Long cardProductId, Long amount) {
+		List<CardBenefit> benefits = cardBenefitRepository.findByCardProductIdOrderByPriorityDescBenefitIdAsc(
+			cardProductId
+		);
+		if (benefits.isEmpty()) {
+			return null;
+		}
+
+		List<Long> targetAmounts = cardBenefitTierRepository
+			.findByBenefitIdInOrderByMinPrevMonthUsageAsc(benefits.stream()
+				.map(CardBenefit::getBenefitId)
+				.toList())
+			.stream()
+			.map(CardBenefitTier::getMinPrevMonthUsage)
+			.filter(Objects::nonNull)
+			.distinct()
+			.sorted()
+			.toList();
+		if (targetAmounts.isEmpty()) {
+			return null;
+		}
+
+		long currentAmount = amount == null ? 0L : amount;
+		return targetAmounts.stream()
+			.filter(targetAmount -> targetAmount > currentAmount)
+			.findFirst()
+			.orElse(targetAmounts.get(targetAmounts.size() - 1));
 	}
 
 	private CardBenefitResponse toBenefitResponse(

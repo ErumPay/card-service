@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -80,6 +81,9 @@ class CardRegistrationServiceTest {
 	@Mock
 	private CardNotificationEventPublisher cardNotificationEventPublisher;
 
+	@Mock
+	private CardPerformanceSyncService cardPerformanceSyncService;
+
 	private BillingKeyCryptoService billingKeyCryptoService;
 
 	private CardRegistrationService cardRegistrationService;
@@ -94,6 +98,7 @@ class CardRegistrationServiceTest {
 			billingKeyServiceClient,
 			billingKeyCryptoService,
 			cardNotificationEventPublisher,
+			cardPerformanceSyncService,
 			transactionTemplate(),
 			FIXED_CLOCK
 		);
@@ -207,7 +212,26 @@ class CardRegistrationServiceTest {
 		assertThat(storedBillingKey).startsWith("enc:v1:");
 		assertThat(storedBillingKey).isNotEqualTo("billing-key");
 		assertThat(billingKeyCryptoService.decrypt(storedBillingKey)).isEqualTo("billing-key");
+		verify(cardPerformanceSyncService).syncAfterRegistration(any(AuthUserInfoResponse.class), eq(100L), eq(cardProduct));
 		verify(cardNotificationEventPublisher).publishRegistered(1L, 100L, "LOCA 365");
+	}
+
+	@Test
+	void registerSucceedsAndPublishesNotificationWhenPerformanceSyncFails() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(cardProduct, issueResponse("100", "billing-key", "8000-****-****-1234"));
+		doThrow(new RuntimeException("performance sync failed"))
+			.when(cardPerformanceSyncService)
+			.syncAfterRegistration(any(AuthUserInfoResponse.class), eq(100L), eq(cardProduct));
+
+		CardRegisterResponse response = cardRegistrationService.register(1L, request);
+
+		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
+		InOrder inOrder = inOrder(cardPerformanceSyncService, cardNotificationEventPublisher);
+		inOrder.verify(cardPerformanceSyncService)
+			.syncAfterRegistration(any(AuthUserInfoResponse.class), eq(100L), eq(cardProduct));
+		inOrder.verify(cardNotificationEventPublisher).publishRegistered(1L, 100L, "LOCA 365");
 	}
 
 	@Test
@@ -247,6 +271,39 @@ class CardRegistrationServiceTest {
 
 		assertThat(response.getStatus()).isEqualTo(CardStatus.ACTIVE);
 		assertThat(response.getMaskedNumber()).isEqualTo("8000-****-****-1234");
+	}
+
+	@Test
+	void registerFailsAndSoftDeletesRegisteringCardWhenBillingKeyServiceReturnsCardExpired() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(cardProduct, issueResponse("SIM-CARD-202", null, "8000-****-****-1234"));
+
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
+			.isInstanceOf(BillingKeyIssueFailedException.class);
+
+		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
+		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
+		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
+		verify(cardRegisteredRepository, never()).findByUserIdAndDefaultCardTrueAndStatus(any(), any());
+		verify(cardPerformanceSyncService, never()).syncAfterRegistration(any(), any(), any());
+		verify(cardNotificationEventPublisher, never()).publishRegistered(any(), any(), any());
+	}
+
+	@Test
+	void registerFailsAndSoftDeletesRegisteringCardWhenBillingKeyServiceReturnsCardLost() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(cardProduct, issueResponse("SIM-CARD-201", null, "8000-****-****-1234"));
+
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
+			.isInstanceOf(BillingKeyIssueFailedException.class);
+
+		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
+		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
+		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
+		verify(cardRegisteredRepository, never()).findByUserIdAndDefaultCardTrueAndStatus(any(), any());
+		verify(cardNotificationEventPublisher, never()).publishRegistered(any(), any(), any());
 	}
 
 	@Test
@@ -472,6 +529,8 @@ class CardRegistrationServiceTest {
 	void billingKeyClientDtosMaskSensitiveValuesInToString() {
 		assertThat(new AuthUserInfoResponse(1L, "19900101", "ACTIVE").toString())
 			.doesNotContain("19900101");
+		assertThat(new AuthUserInfoResponse(1L, "홍길동", "01012345678", "19900101", "ACTIVE").toString())
+			.doesNotContain("01012345678", "19900101");
 		assertThat(new BillingKeyIssueRequest(100L, "8000001234567890", "2812", "123", "12", "900101").toString())
 			.doesNotContain("8000001234567890", "2812", "123", "12", "900101");
 		assertThat(issueResponse("100", "billing-key", "8000-****-****-1234").toString())
@@ -486,7 +545,8 @@ class CardRegistrationServiceTest {
 		when(cardProductRepository.findByMockBin("800000")).thenReturn(Optional.of(cardProduct));
 		when(cardRegisteredRepository.existsByUserIdAndCardProductIdAndStatusIn(eq(1L), eq(10L), any()))
 			.thenReturn(false);
-		when(authServiceClient.getUserInfo(1L)).thenReturn(new AuthUserInfoResponse(1L, "19900101", "ACTIVE"));
+		when(authServiceClient.getUserInfo(1L))
+			.thenReturn(new AuthUserInfoResponse(1L, "홍길동", "01012345678", "19900101", "ACTIVE"));
 		when(cardRegisteredRepository.save(any(CardRegistered.class))).thenAnswer(invocation -> {
 			CardRegistered card = invocation.getArgument(0);
 			if (card.getCardId() == null) {
