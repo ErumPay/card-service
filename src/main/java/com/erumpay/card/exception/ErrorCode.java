@@ -25,6 +25,24 @@ public enum ErrorCode {
 	CARD_NOT_FOUND(HttpStatus.NOT_FOUND, "CARD-CARD-201", "CARD_NOT_FOUND", "카드를 찾을 수 없습니다."),
 	CARD_PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "CARD-CARD-202", "CARD_PRODUCT_NOT_FOUND", "지원하지 않는 카드입니다."),
 	CARD_NOT_ACTIVE(HttpStatus.CONFLICT, "CARD-CARD-203", "CARD_NOT_ACTIVE", "활성 상태의 카드만 처리할 수 있습니다."),
+	CARD_UNAVAILABLE(
+		HttpStatus.CONFLICT,
+		"CARD-CARD-303",
+		"CARD_UNAVAILABLE",
+		"만료되었거나 사용할 수 없는 카드입니다."
+	),
+	CARD_INFORMATION_INVALID(
+		HttpStatus.BAD_REQUEST,
+		"CARD-CARD-304",
+		"CARD_INFORMATION_INVALID",
+		"입력한 카드 정보가 올바르지 않습니다."
+	),
+	CARD_AUTHENTICATION_FAILED(
+		HttpStatus.UNAUTHORIZED,
+		"CARD-AUTH-301",
+		"CARD_AUTHENTICATION_FAILED",
+		"카드 비밀번호 인증에 실패했습니다."
+	),
 	DUPLICATE_CARD_REGISTRATION(
 		HttpStatus.CONFLICT,
 		"CARD-CARD-301",

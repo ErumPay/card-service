@@ -32,6 +32,9 @@ import com.erumpay.card.exception.BillingKeyIssuePendingException;
 import com.erumpay.card.exception.BillingKeyIssueUnknownException;
 import com.erumpay.card.exception.CardProductNotFoundException;
 import com.erumpay.card.exception.CardRegistrationFailedException;
+import com.erumpay.card.exception.CardAuthenticationFailedException;
+import com.erumpay.card.exception.CardInformationInvalidException;
+import com.erumpay.card.exception.CardUnavailableException;
 import com.erumpay.card.exception.DuplicateCardRegistrationException;
 import com.erumpay.card.exception.InvalidExpiryYmException;
 import com.erumpay.card.exception.InvalidUserBirthDateException;
@@ -280,7 +283,7 @@ class CardRegistrationServiceTest {
 		stubSuccessfulRegistration(cardProduct, issueResponse("SIM-CARD-202", null, "8000-****-****-1234"));
 
 		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
-			.isInstanceOf(BillingKeyIssueFailedException.class);
+			.isInstanceOf(CardUnavailableException.class);
 
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
 		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
@@ -297,13 +300,33 @@ class CardRegistrationServiceTest {
 		stubSuccessfulRegistration(cardProduct, issueResponse("SIM-CARD-201", null, "8000-****-****-1234"));
 
 		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
-			.isInstanceOf(BillingKeyIssueFailedException.class);
+			.isInstanceOf(CardUnavailableException.class);
 
 		ArgumentCaptor<CardRegistered> cardCaptor = ArgumentCaptor.forClass(CardRegistered.class);
 		verify(cardRegisteredRepository, times(2)).save(cardCaptor.capture());
 		assertThat(cardCaptor.getValue().getStatus()).isEqualTo(CardStatus.DELETED);
 		verify(cardRegisteredRepository, never()).findByUserIdAndDefaultCardTrueAndStatus(any(), any());
 		verify(cardNotificationEventPublisher, never()).publishRegistered(any(), any(), any());
+	}
+
+	@Test
+	void registerClassifiesInvalidPasswordAsAuthenticationFailure() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(cardProduct, issueResponse("BIL-CARD-205", null, null));
+
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
+			.isInstanceOf(CardAuthenticationFailedException.class);
+	}
+
+	@Test
+	void registerClassifiesInvalidCvcAsCardInformationFailure() {
+		CardRegisterRequest request = request("8000001234567890");
+		CardProduct cardProduct = cardProduct(10L);
+		stubSuccessfulRegistration(cardProduct, issueResponse("BIL-CARD-208", null, null));
+
+		assertThatThrownBy(() -> cardRegistrationService.register(1L, request))
+			.isInstanceOf(CardInformationInvalidException.class);
 	}
 
 	@Test
