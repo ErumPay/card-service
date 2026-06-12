@@ -19,6 +19,9 @@ import com.erumpay.card.exception.BillingKeyIssuePendingException;
 import com.erumpay.card.exception.BillingKeyIssueUnknownException;
 import com.erumpay.card.exception.CardProductNotFoundException;
 import com.erumpay.card.exception.CardRegistrationFailedException;
+import com.erumpay.card.exception.CardAuthenticationFailedException;
+import com.erumpay.card.exception.CardInformationInvalidException;
+import com.erumpay.card.exception.CardUnavailableException;
 import com.erumpay.card.exception.DuplicateCardRegistrationException;
 import com.erumpay.card.exception.InvalidExpiryYmException;
 import com.erumpay.card.exception.InvalidUserBirthDateException;
@@ -51,6 +54,28 @@ public class CardRegistrationService {
 	private static final Set<String> BILLING_KEY_ISSUE_SUCCESS_CODES = Set.of("100", "BIL-KEY-100");
 	private static final Set<String> BILLING_KEY_ISSUE_ACTIVE_ECHO_CODES = Set.of("102", "BIL-KEY-101");
 	private static final Set<String> BILLING_KEY_ISSUE_PENDING_CODES = Set.of("105", "BIL-KEY-102");
+	private static final Set<String> CARD_AUTHENTICATION_FAILURE_CODES = Set.of(
+		"BIL-CARD-205",
+		"SIM-CARD-205"
+	);
+	private static final Set<String> CARD_UNAVAILABLE_CODES = Set.of(
+		"BIL-CARD-201",
+		"BIL-CARD-202",
+		"BIL-CARD-203",
+		"SIM-CARD-201",
+		"SIM-CARD-202",
+		"SIM-CARD-203"
+	);
+	private static final Set<String> CARD_INFORMATION_INVALID_CODES = Set.of(
+		"BIL-CARD-206",
+		"BIL-CARD-207",
+		"BIL-CARD-208",
+		"BIL-USER-501",
+		"SIM-CARD-206",
+		"SIM-CARD-207",
+		"SIM-CARD-208",
+		"SIM-USER-501"
+	);
 	private static final Set<String> BILLING_KEY_DELETE_SUCCESS_CODES = Set.of(
 		"100",
 		"BIL-KEY-100",
@@ -100,7 +125,7 @@ public class CardRegistrationService {
 		}
 		if (!isSuccessfulIssue(issueResponse)) {
 			softDeleteRegisteringCard(registeringCard);
-			throw new BillingKeyIssueFailedException();
+			throwRegistrationFailure(issueResponse);
 		}
 
 		CardRegisterResponse response = activateRegisteredCard(
@@ -254,6 +279,21 @@ public class CardRegistrationService {
 				BILLING_KEY_ISSUE_SUCCESS_CODES.contains(response.responseCode())
 					|| BILLING_KEY_ISSUE_ACTIVE_ECHO_CODES.contains(response.responseCode())
 			);
+	}
+
+	private void throwRegistrationFailure(BillingKeyIssueResponse response) {
+		String responseCode = response == null ? null : response.responseCode();
+
+		if (CARD_AUTHENTICATION_FAILURE_CODES.contains(responseCode)) {
+			throw new CardAuthenticationFailedException();
+		}
+		if (CARD_UNAVAILABLE_CODES.contains(responseCode)) {
+			throw new CardUnavailableException();
+		}
+		if (CARD_INFORMATION_INVALID_CODES.contains(responseCode)) {
+			throw new CardInformationInvalidException();
+		}
+		throw new BillingKeyIssueFailedException();
 	}
 
 	private CardRegisterResponse activateRegisteredCard(
